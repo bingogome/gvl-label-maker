@@ -1,0 +1,42 @@
+defaults:
+  - dataset: cmustretch
+  - data_loader: huggingface
+  - model: gemini
+  - mapper: gemini
+  - prompts: default
+  - prompt_phrases: default
+  - mapping_prompts: default
+  - _self_
+
+seed: 42          # Global seed (propagated to loader & any RNG-dependent logic)
+shuffle: true       # Whether to shuffle frame presentation order
+sampling_method: heavy_right_tail
+
+
+dataset:
+  num_context_episodes: 0  # How many in-context episodes to provide
+
+prediction:
+  num_examples: 50   # How many FewShotInput predictions to perform
+  save_raw: true    # Whether to dump raw model outputs
+  output_dir: ${hydra:run.dir}
+  temperature: 1.0  # Sampling temperature for generation
+
+mapper:
+  max_new_tokens: 1024
+  temperature: 0.75
+  retries: 3
+  mapping_prompt: ${mapping_prompts}
+
+hydra:
+  mode: MULTIRUN # comment this if you don't want to sweep
+  run:
+    dir: results/
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}-predict
+    subdir: ${hydra.job.num}
+  sweeper:
+    params:
+      dataset.num_context_episodes: 0
+
+

@@ -1,0 +1,7 @@
+_target_: gvl.clients.gemini.GeminiClient
+model_name: gemini-2.5-pro
+rpm: 30
+
+
+# model_name: gemini-robotics-er-1.5-preview
+# model_name: gemini-2.5-pro

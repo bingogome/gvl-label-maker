@@ -6,6 +6,7 @@
 # This should always be ignored!
 .venv/
 .env
+/results/
 # Python caches and compiled files/images
 __pycache__/
 *.pyc
