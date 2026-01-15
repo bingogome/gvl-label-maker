@@ -1,7 +1,7 @@
 defaults:
   - dataset: aloha_static_towel
   - data_loader: huggingface
-  - model: gemma
+  - model: gemma_8bit
   - mapper: gemini
   - prompts: default
   - prompt_phrases: default
@@ -14,10 +14,10 @@ sampling_method: random  # Frame sampling method: 'random', 'uniform', 'gauss', 
 anchoring: first   # Anchoring method for frame sampling: 'first', 'last', 'middle'
 
 dataset:
-  num_context_episodes: 2  # How many in-context episodes to provide
+  num_context_episodes: 8  # How many in-context episodes to provide
 
 prediction:
-  num_examples: 30   # How many FewShotInput predictions to perform
+  num_examples: 3   # How many FewShotInput predictions to perform
   save_raw: true    # Whether to dump raw model outputs
   output_dir: ${hydra:run.dir}
   temperature: 1 # Sampling temperature for generation
@@ -37,4 +37,4 @@ hydra:
     subdir: ${hydra.job.num}
   sweeper:
     params:
-      dataset.num_context_episodes: 2
+      dataset.num_context_episodes: 8
