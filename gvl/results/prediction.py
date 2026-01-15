@@ -8,7 +8,7 @@ from gvl.utils.data_types import InferredFewShotResult
 
 @dataclass
 class PredictionRecord:
-    """A single model prediction result for one FewShot example."""
+    """A single model prediction result for one few-shot case."""
 
     index: int
     dataset: str

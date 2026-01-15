@@ -6,14 +6,14 @@ downstream modules.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from time import sleep
 
 from loguru import logger
 
 from gvl.utils.aliases import Event, ImageEvent, TextEvent
 from gvl.utils.constants import PromptPhraseKey
-from gvl.utils.data_types import Episode
+from gvl.utils.data_types import ContextEpisodes, Episode
 from gvl.utils.errors import MaxRetriesExceeded
 from gvl.utils.rate_limiter import SECS_PER_MIN, RateLimiter
 
@@ -44,7 +44,7 @@ class BaseModelClient(ABC):
         self,
         prompt: str,
         eval_episode: Episode,
-        context_episodes: list[Episode],
+        context_episodes: ContextEpisodes,
         temperature: float = 0.0,
         *,
         prompt_phrases: dict[str, str],
@@ -136,7 +136,7 @@ class BaseModelClient(ABC):
         self,
         prompt_text: str,
         eval_episode: Episode,
-        context_episodes: Sequence[Episode],
+        context_episodes: ContextEpisodes,
         *,
         prompt_phrases: dict[str, str],
     ) -> Iterator[Event]:
@@ -178,7 +178,7 @@ class BaseModelClient(ABC):
         self,
         prompt: str,
         eval_episode: Episode,
-        context_episodes: list[Episode],
+        context_episodes: ContextEpisodes,
         temperature: float = 0.0,
         *,
         prompt_phrases: dict[str, str],

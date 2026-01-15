@@ -12,7 +12,7 @@ from gvl.metrics.base import MetricResult
 from gvl.metrics.voc import VOCMetric
 from gvl.results.prediction import PredictionRecord
 from gvl.utils.constants import N_DEBUG_PROMPT_CHARS
-from gvl.utils.data_types import Example as FewShotInput
+from gvl.utils.data_types import EvalCase as FewShotInput
 from gvl.utils.data_types import InferredEpisode, InferredFewShotResult
 from gvl.utils.errors import PercentagesCountMismatch, PercentagesNormalizationError
 from gvl.utils.hydra import ensure_required_keys
@@ -20,12 +20,12 @@ from gvl.utils.prompts import format_prompt
 from gvl.mapper.base import BaseMapper
 
 
-def build_inferred_example(
-    fewshot: FewShotInput,
+def build_inferred_case(
+    case: FewShotInput,
     predicted: list[int],
 ) -> InferredFewShotResult:
-    inferred_ep = InferredEpisode.from_predictions(fewshot.eval_episode, predictions=predicted)
-    return InferredFewShotResult(eval_episode=inferred_ep, context_episodes=fewshot.context_episodes)
+    inferred_ep = InferredEpisode.from_predictions(case.eval_episode, predictions=predicted)
+    return InferredFewShotResult(eval_episode=inferred_ep, context_episodes=case.context_episodes)
 
 
 def save_jsonl(records: Iterable[dict], path: Path) -> None:
@@ -44,30 +44,30 @@ def validate_prediction_config(config: DictConfig) -> None:
         ensure_required_keys(config, key)
 
 
-def load_fewshot_examples(loader, n: int, dataset_name: str) -> list[FewShotInput]:
-    """Load N few-shot inputs from a data loader with logging.
+def load_fewshot_cases(loader, n: int, dataset_name: str) -> list[FewShotInput]:
+    """Load N few-shot cases from a data loader with logging.
 
     Args:
         loader: Instance of BaseDataLoader.
-        n: Number of examples to load.
+        n: Number of cases to load.
         dataset_name: Human-friendly dataset identifier for logs.
     Returns:
         List of FewShotInput objects.
     """
-    logger.info(f"Generating {n} examples…")
-    examples: list[FewShotInput] = []
+    logger.info(f"Generating {n} cases…")
+    cases: list[FewShotInput] = []
     for i in range(n):
-        logger.info(f"Loading example {i + 1}/{n}")
-        ex = loader.load_fewshot_input()
-        examples.append(ex)
-    logger.success(f"Loaded {len(examples)} few-shot examples from dataset '{dataset_name}'")
-    return examples
+        logger.info(f"Loading case {i + 1}/{n}")
+        case = loader.load_fewshot_input()
+        cases.append(case)
+    logger.success(f"Loaded {len(cases)} few-shot cases from dataset '{dataset_name}'")
+    return cases
 
 
-def predict_on_fewshot_input(
+def predict_on_fewshot_case(
     idx: int,
     total: int,
-    ex: FewShotInput,
+    case: FewShotInput,
     client: BaseModelClient,
     prompt_template: str,
     save_raw: bool,
@@ -78,28 +78,28 @@ def predict_on_fewshot_input(
     *,
     prompt_phrases: dict[str, str] | None = None,
 ) -> PredictionRecord:
-    """Run model prediction and metric computation on a single few-shot input.
+    """Run model prediction and metric computation on a single few-shot case.
 
     The logic mirrors the original script function without changes.
     """
-    logger.info(f"Processing example {idx + 1}/{total} (episode_index={ex.eval_episode.episode_index}) from {dataset_name}")
-    prompt = format_prompt(prompt_template, instruction=ex.eval_episode.instruction)
+    logger.info(f"Processing case {idx + 1}/{total} (episode_index={case.eval_episode.episode_index}) from {dataset_name}")
+    prompt = format_prompt(prompt_template, instruction=case.eval_episode.instruction)
     logger.debug(f"Prompt (truncated {N_DEBUG_PROMPT_CHARS} chars): {prompt[:N_DEBUG_PROMPT_CHARS]}...")
     try:
         response_text = client.generate_response(
             prompt,
-            ex.eval_episode,
-            ex.context_episodes,
+            case.eval_episode,
+            case.context_episodes,
             temperature=temperature,
             prompt_phrases=(prompt_phrases or {}),
         )
     except (RuntimeError, ValueError, OSError) as e:
-        logger.error(f"Model generation failed for example {idx}: {e}")
+        logger.error(f"Model generation failed for case {idx}: {e}")
         predicted: list[int] = []
         response_text = f"<error: {e}>"
-    logger.debug(f"Response on example {idx}:\n{response_text}")
+    logger.debug(f"Response on case {idx}:\n{response_text}")
 
-    expected_len = len(ex.eval_episode.shuffled_frames)
+    expected_len = len(case.eval_episode.shuffled_frames)
     error_count: dict[str, int] = {
         PercentagesCountMismatch.__name__: 0,
         PercentagesNormalizationError.__name__: 0,
@@ -107,20 +107,20 @@ def predict_on_fewshot_input(
 
     try:
         predicted = mapper.extract_percentages(response_text)
-        logger.success(f"Extracted {len(predicted)} percentages on example {idx}")
+        logger.success(f"Extracted {len(predicted)} percentages on case {idx}")
     except PercentagesNormalizationError as e:
-        logger.error(f"Extraction error on example {idx}: {e}")
+        logger.error(f"Extraction error on case {idx}: {e}")
         predicted = []
         error_count[PercentagesNormalizationError.__name__] += 1
 
     if len(predicted) != expected_len:
         logger.error(
-            f"Count mismatch on example {idx}: expected {expected_len}, "
+            f"Count mismatch on case {idx}: expected {expected_len}, "
             f"got {len(predicted)}"
         )
         error_count[PercentagesCountMismatch.__name__] += 1
 
-    inferred: InferredFewShotResult = build_inferred_example(ex, predicted)
+    inferred: InferredFewShotResult = build_inferred_case(case, predicted)
 
     if sum(error_count.values()) > 0:
         metric_res = MetricResult(name=voc_metric.name, value=0, details={
@@ -135,7 +135,7 @@ def predict_on_fewshot_input(
             metrics_payload[f"{metric_res.name}_{k}"] = v
 
     logger.debug(
-        f"Metrics example {idx}: {metric_res.name}="
+        f"Metrics case {idx}: {metric_res.name}="
         f"{(metric_res.value if metric_res.value is not None else float('nan')):.4f}"
         f"{(' details=' + str(metric_res.details)) if metric_res.details else ''}"
     )
@@ -145,10 +145,10 @@ def predict_on_fewshot_input(
         dataset=dataset_name,
         example=inferred,
         predicted_percentages=predicted,
-        valid_length=len(predicted) == len(ex.eval_episode.shuffled_frames),
+        valid_length=len(predicted) == len(case.eval_episode.shuffled_frames),
         metrics=metrics_payload,
         raw_response=response_text if save_raw else None,
         error_count=error_count,
     )
-    logger.info(f"Example {idx}: preds={len(predicted)}/{len(ex.eval_episode.shuffled_frames)} VOC={metric_res.value}")
+    logger.info(f"Case {idx}: preds={len(predicted)}/{len(case.eval_episode.shuffled_frames)} VOC={metric_res.value}")
     return record

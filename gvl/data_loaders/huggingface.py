@@ -5,8 +5,8 @@ from lerobot.datasets.push_dataset_to_hub.utils import calculate_episode_data_in
 from loguru import logger
 
 from gvl.data_loaders.base import BaseDataLoader
-from gvl.utils.data_types import Episode
-from gvl.utils.data_types import Example as FewShotInput
+from gvl.utils.data_types import ContextEpisodes, Episode
+from gvl.utils.data_types import EvalCase as FewShotInput
 
 disable_progress_bar()
 
@@ -58,10 +58,10 @@ class HuggingFaceDataLoader(BaseDataLoader):
         instruction = ds[from_idx]["task"]
         return frames, instruction
 
-    def _build_context(self, exclude_index: int) -> list[Episode]:
+    def _build_context(self, exclude_index: int) -> ContextEpisodes:
         pool = [i for i in self._all_episodes_indices if i != exclude_index]
         if not pool or self.num_context_episodes <= 0:
-            return []
+            return ContextEpisodes([])
         # Deterministic sampling for the given eval episode
         rng = np.random.default_rng(self.seed + exclude_index)
         rng.shuffle(pool)
@@ -70,7 +70,7 @@ class HuggingFaceDataLoader(BaseDataLoader):
         for idx in chosen:
             frames, instruction = self._load_episode_frames(idx)
             ctx_eps.append(self._build_episode(frames=frames, instruction=instruction, episode_index=idx))
-        return ctx_eps
+        return ContextEpisodes(ctx_eps)
 
     def load_fewshot_input(self, episode_index: int | None = None) -> FewShotInput:
         if episode_index is None:

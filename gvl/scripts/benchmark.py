@@ -2,9 +2,9 @@
 
 Steps:
 1. Instantiate data loader & model client via Hydra.
-2. Sample N examples (FewShotInput) from loader.
-3. For each example, call the shared prediction helper.
-4. Persist JSONL outputs (one line per example) + aggregated metrics summary.
+2. Sample N cases (FewShotInput) from loader.
+3. For each case, call the shared prediction helper.
+4. Persist JSONL outputs (one line per case) + aggregated metrics summary.
 """
 
 import json
@@ -76,15 +76,15 @@ def save_frame_visualizations(records: list[PredictionRecord], output_root: Path
         return
     output_root.mkdir(parents=True, exist_ok=True)
     for record in records:
-        example_dir = output_root / f"example_{record.index:04d}"
-        example_dir.mkdir(parents=True, exist_ok=True)
+        case_dir = output_root / f"case_{record.index:04d}"
+        case_dir.mkdir(parents=True, exist_ok=True)
         for ctx_idx, ep in enumerate(record.example.context_episodes):
-            ctx_dir = example_dir / f"context_{ctx_idx:02d}_episode_{ep.episode_index}"
+            ctx_dir = case_dir / f"context_{ctx_idx:02d}_episode_{ep.episode_index}"
             _save_episode_frames(ep.shuffled_frames, ep.shuffled_frames_approx_completion_rates, ctx_dir, "progress")
         eval_ep = record.example.eval_episode
-        gt_dir = example_dir / f"eval_episode_{eval_ep.episode_index}_gt"
+        gt_dir = case_dir / f"eval_episode_{eval_ep.episode_index}_gt"
         _save_episode_frames(eval_ep.shuffled_frames, eval_ep.shuffled_frames_approx_completion_rates, gt_dir, "gt")
-        pred_dir = example_dir / f"eval_episode_{eval_ep.episode_index}_pred"
+        pred_dir = case_dir / f"eval_episode_{eval_ep.episode_index}_pred"
         _save_episode_frames(eval_ep.shuffled_frames, eval_ep.shuffled_frames_predicted_completion_rates, pred_dir, "pred")
 
 
@@ -106,7 +106,7 @@ def main(config: DictConfig) -> None:
         f"model={client.__class__.__name__} prompt_template_chars={len(prompt_template)}"
     )
 
-    num_examples = int(config.prediction.num_examples)
+    num_cases = int(config.prediction.num_cases)
     save_raw = bool(config.prediction.save_raw)
     output_dir = Path(str(config.prediction.output_dir))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -116,10 +116,10 @@ def main(config: DictConfig) -> None:
     sampling_method = config.sampling_method
     anchoring = config.anchoring
 
-    examples = infer_utils.load_fewshot_examples(data_loader, num_examples, config.dataset.name)
-    logger.info(f"Loaded {len(examples)} (in-context trajectories (0 or more) + eval trajectory) examples for prediction")
-    if len(examples) == 0:
-        logger.warning("No examples loaded; exiting")
+    cases = infer_utils.load_fewshot_cases(data_loader, num_cases, config.dataset.name)
+    logger.info(f"Loaded {len(cases)} (in-context trajectories (0 or more) + eval trajectory) cases for prediction")
+    if len(cases) == 0:
+        logger.warning("No cases loaded; exiting")
         return
     voc_metric = VOCMetric()
     logger.debug(f"Metrics initialized: {voc_metric.name}")
@@ -128,10 +128,10 @@ def main(config: DictConfig) -> None:
     prompt_phrases = dict(config.get("prompt_phrases", {})) if hasattr(config, "prompt_phrases") else {}
     logger.debug(f"Prompt phrases: {prompt_phrases}")
     records = [
-        infer_utils.predict_on_fewshot_input(
+        infer_utils.predict_on_fewshot_case(
             idx,
-            num_examples,
-            ex,
+            num_cases,
+            case,
             client,
             prompt_template,
             save_raw,
@@ -141,7 +141,7 @@ def main(config: DictConfig) -> None:
             mapper=mapper,
             prompt_phrases=prompt_phrases,
         )
-        for idx, ex in tqdm(enumerate(examples), total=num_examples, desc="Predicting")
+        for idx, case in tqdm(enumerate(cases), total=num_cases, desc="Predicting")
     ]
 
     save_images = bool(config.prediction.get("save_images", True))
@@ -165,7 +165,7 @@ def main(config: DictConfig) -> None:
     summary['num_context_episodes'] = config.dataset.num_context_episodes
     summary['prediction_time'] = starting_time
     summary['temperature'] = float(config.prediction.get("temperature", 1.0))
-    summary['num_examples'] = len(records)
+    summary['num_cases'] = len(records)
     summary['sampling'] = sampling_method
     summary['metrics'] = dataset_metrics.to_dict()
     summary['prompt_type'] = config.prompts.name

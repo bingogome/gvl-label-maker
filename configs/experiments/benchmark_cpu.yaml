@@ -17,7 +17,7 @@ dataset:
   num_context_episodes: 0  # How many in-context episodes to provide
 
 prediction:
-  num_examples: 50   # How many FewShotInput predictions to perform
+  num_cases: 50   # How many few-shot cases to evaluate
   save_raw: true    # Whether to dump raw model outputs
   output_dir: ${hydra:run.dir}
   temperature: 1.0  # Sampling temperature for generation
@@ -38,5 +38,4 @@ hydra:
   sweeper:
     params:
       dataset.num_context_episodes: 0
-
 
