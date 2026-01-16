@@ -44,7 +44,7 @@ class RegexMapper(BaseMapper):
 
         total = sum(vals)
         if total <= 0:
-            # Degenerate case; cannot normalize meaningfully
+            # Degenerate scenario; cannot normalize meaningfully
             raise PercentagesNormalizationError()
 
         # Normalize to sum to 100, then distribute remainders

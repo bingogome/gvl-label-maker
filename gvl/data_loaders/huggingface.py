@@ -5,8 +5,7 @@ from lerobot.datasets.push_dataset_to_hub.utils import calculate_episode_data_in
 from loguru import logger
 
 from gvl.data_loaders.base import BaseDataLoader
-from gvl.utils.data_types import ContextEpisodes, Episode
-from gvl.utils.data_types import EpisodeEvalCase as FewShotInput
+from gvl.utils.data_types import ContextEpisodes, Episode, EpisodeEvalCase
 
 disable_progress_bar()
 
@@ -14,7 +13,7 @@ disable_progress_bar()
 class HuggingFaceDataLoader(BaseDataLoader):
     """Load episodes from LeRobot datasets hosted on Hugging Face.
 
-    Produces a FewShotInput with one eval episode and up to ``num_context_episodes``
+    Produces an EpisodeEvalCase with one eval episode and up to ``num_context_episodes``
     sampled from the remaining pool. Frame count is controlled by ``num_frames``.
     """
 
@@ -58,12 +57,21 @@ class HuggingFaceDataLoader(BaseDataLoader):
         instruction = ds[from_idx]["task"]
         return frames, instruction
 
-    def _build_context(self, exclude_index: int) -> ContextEpisodes:
-        pool = [i for i in self._all_episodes_indices if i != exclude_index]
+    def load_episode_frames(self, episode_index: int) -> tuple[list, str]:
+        """Load raw frames and instruction for an episode without sampling or shuffling."""
+        return self._load_episode_frames(episode_index)
+
+    def _build_context(self, exclude_index: int | None) -> ContextEpisodes:
+        pool = [
+            i
+            for i in self._all_episodes_indices
+            if exclude_index is None or i != exclude_index
+        ]
         if not pool or self.num_context_episodes <= 0:
             return ContextEpisodes([])
-        # Deterministic sampling for the given eval episode
-        rng = np.random.default_rng(self.seed + exclude_index)
+        # Deterministic sampling per eval episode (or global seed if no exclusion)
+        rng_seed = self.seed if exclude_index is None else self.seed + int(exclude_index)
+        rng = np.random.default_rng(rng_seed)
         rng.shuffle(pool)
         chosen = pool[: self.num_context_episodes]
         ctx_eps: list[Episode] = []
@@ -72,7 +80,11 @@ class HuggingFaceDataLoader(BaseDataLoader):
             ctx_eps.append(self._build_episode(frames=frames, instruction=instruction, episode_index=idx))
         return ContextEpisodes(ctx_eps)
 
-    def load_fewshot_input(self, episode_index: int | None = None) -> FewShotInput:
+    def load_context_episodes(self, *, exclude_index: int | None = None) -> ContextEpisodes:
+        """Load context episodes without building an eval episode."""
+        return self._build_context(exclude_index)
+
+    def load_fewshot_input(self, episode_index: int | None = None) -> EpisodeEvalCase:
         if episode_index is None:
             if self._cursor >= len(self._all_episodes_indices):
                 self._cursor = 0
@@ -83,7 +95,7 @@ class HuggingFaceDataLoader(BaseDataLoader):
         frames, instruction = self._load_episode_frames(episode_index)
         eval_ep = self._build_episode(frames=frames, instruction=instruction, episode_index=episode_index, sampling_method=self.sampling_method, anchoring=self.anchoring)
         context = self._build_context(exclude_index=episode_index)
-        return FewShotInput(eval_episode=eval_ep, context_episodes=context)
+        return EpisodeEvalCase(eval_episode=eval_ep, context_episodes=context)
 
     def reset(self) -> None:
         self._cursor = 0

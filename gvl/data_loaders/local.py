@@ -1,11 +1,12 @@
 from collections.abc import Sequence
 from pathlib import Path
 
+import numpy as np
 from loguru import logger
 from PIL import Image
 
 from gvl.data_loaders.base import BaseDataLoader
-from gvl.utils.data_types import ContextEpisodes, EpisodeEvalCase as FewShotInput
+from gvl.utils.data_types import ContextEpisodes, EpisodeEvalCase
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"}
 
@@ -52,7 +53,44 @@ class LocalDataLoader(BaseDataLoader):
                 logger.warning(f"Skipping unreadable image {p}: {exc}")
         return images
 
-    def load_fewshot_input(self, episode_index: int | None = None) -> FewShotInput:
+    def load_episode_frames(self, episode_index: int) -> tuple[list, str]:
+        """Load raw frames and instruction for an episode without sampling or shuffling."""
+        if episode_index < 0 or episode_index >= len(self.episodes_files):
+            raise IndexError
+        paths = [Path(p) for p in self.episodes_files[episode_index]]
+        frames = self._load_images(paths)
+        if not frames:
+            raise ValueError
+        return frames, self.instruction
+
+    def load_context_episodes(self, *, exclude_index: int | None = None) -> ContextEpisodes:
+        if self.num_context_episodes <= 0:
+            return ContextEpisodes([])
+        pool = [
+            idx for idx in range(len(self.episodes_files))
+            if exclude_index is None or idx != exclude_index
+        ]
+        if not pool:
+            return ContextEpisodes([])
+        rng_seed = self.seed if exclude_index is None else self.seed + int(exclude_index)
+        rng = np.random.default_rng(rng_seed)
+        rng.shuffle(pool)
+        chosen = pool[: self.num_context_episodes]
+        ctx_eps = []
+        for idx in chosen:
+            paths = [Path(p) for p in self.episodes_files[idx]]
+            frames = self._load_images(paths)
+            if not frames:
+                raise ValueError
+            ctx_eps.append(self._build_episode(
+                frames=frames,
+                instruction=self.instruction,
+                episode_index=idx,
+                sampling_method=self.sampling_method,
+            ))
+        return ContextEpisodes(ctx_eps)
+
+    def load_fewshot_input(self, episode_index: int | None = None) -> EpisodeEvalCase:
         if episode_index is None:
             episode_index = 0
         if episode_index < 0 or episode_index >= len(self.episodes_files):
@@ -68,4 +106,4 @@ class LocalDataLoader(BaseDataLoader):
             episode_index=episode_index or 0,
             sampling_method=self.sampling_method
         )
-        return FewShotInput(eval_episode=ep, context_episodes=ContextEpisodes([]))
+        return EpisodeEvalCase(eval_episode=ep, context_episodes=ContextEpisodes([]))

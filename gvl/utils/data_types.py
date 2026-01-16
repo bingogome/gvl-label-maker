@@ -137,7 +137,7 @@ class InferredFrame(EvalFrame):
 
 @dataclass(kw_only=True)
 class EvalCase:
-    """Base class for evaluation cases with context episodes."""
+    """Base class for eval cases with context episodes."""
 
     context_episodes: ContextEpisodes
 
@@ -155,7 +155,7 @@ class EvalCase:
 @dataclass
 class EpisodeEvalCase(EvalCase):
     """
-    Container for a single training/evaluation case consisting of one
+    Container for a single training/eval case consisting of one
     evaluation episode and multiple context episodes.
     """
 
@@ -167,8 +167,9 @@ class EpisodeEvalCase(EvalCase):
     def __repr__(self) -> str:
         eval_frames = len(self.eval_episode.shuffled_frames)
         ctx_count, ctx_frames_list, ctx_frames_total = self._context_summary()
+        class_name = self.__class__.__name__
         return (
-            "EpisodeEvalCase("
+            f"{class_name}("
             f"eval_episode_index={self.eval_episode.episode_index}, "
             f"eval_frames={eval_frames}, "
             f"context_episodes={ctx_count}, "
@@ -194,8 +195,9 @@ class FrameEvalCase(EvalCase):
         instruction = self.eval_frame.instruction.replace("\n", " ")
         if len(instruction) > 32:
             instruction = f"{instruction[:29]}..."
+        class_name = self.__class__.__name__
         return (
-            "FrameEvalCase("
+            f"{class_name}("
             f"instruction={instruction!r}, "
             f"context_episodes={ctx_count}, "
             f"context_frames_per_episode={ctx_frames_list}, "
@@ -205,10 +207,9 @@ class FrameEvalCase(EvalCase):
 
 
 @dataclass
-class InferredEpisodeFewShotResult(EvalCase):
+class InferredEpisodeEvalCase(EpisodeEvalCase):
     """
-    Container for a single evaluation case consisting of one
-    evaluation episode and multiple context episodes, with model predictions.
+    Episode eval case with model-predicted completion rates.
     """
 
     eval_episode: InferredEpisode
@@ -218,8 +219,8 @@ class InferredEpisodeFewShotResult(EvalCase):
 
 
 @dataclass
-class InferredFrameFewShotResult(EvalCase):
-    """Container for a single evaluation frame case with model predictions."""
+class InferredFrameEvalCase(FrameEvalCase):
+    """Frame eval case with a model-predicted completion rate."""
 
     eval_frame: InferredFrame
 

@@ -5,8 +5,7 @@ import numpy as np
 from loguru import logger
 
 from gvl.utils.aliases import ImageNumpy, ImageT
-from gvl.utils.data_types import Episode
-from gvl.utils.data_types import EpisodeEvalCase as FewShotInput
+from gvl.utils.data_types import ContextEpisodes, Episode, EpisodeEvalCase
 from gvl.utils.images import to_numpy
 
 
@@ -35,12 +34,20 @@ class BaseDataLoader(ABC):
         self.sampling_method = sampling_method
 
     @abstractmethod
-    def load_fewshot_input(self, episode_index: int | None = None) -> FewShotInput:
-        """Load a single FewShotInput (eval + optional context episodes)."""
+    def load_fewshot_input(self, episode_index: int | None = None) -> EpisodeEvalCase:
+        """Load a single EpisodeEvalCase (eval + optional context episodes)."""
 
-    def load_fewshot_inputs(self, n: int) -> list[FewShotInput]:
-        """Load ``n`` FewShotInput structures in sequence."""
+    def load_fewshot_inputs(self, n: int) -> list[EpisodeEvalCase]:
+        """Load ``n`` EpisodeEvalCase structures in sequence."""
         return [self.load_fewshot_input() for _ in range(int(n))]
+
+    @abstractmethod
+    def load_episode_frames(self, episode_index: int) -> tuple[list[ImageT], str]:
+        """Load raw frames and instruction for an episode without sampling or shuffling."""
+
+    @abstractmethod
+    def load_context_episodes(self, *, exclude_index: int | None = None) -> ContextEpisodes:
+        """Load context episodes for few-shot prompting."""
 
     def reset(self) -> None:
         logger.info(f"Resetting {self.__class__.__name__} data loader with seed {self.seed}")

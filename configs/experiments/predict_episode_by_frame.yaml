@@ -1,0 +1,37 @@
+defaults:
+  - dataset: aloha_static_towel
+  - data_loader: huggingface
+  - model: gemma_8bit
+  - mapper: gemini
+  - prompts: default
+  - prompt_phrases: default
+  - mapping_prompts: default
+  - _self_
+
+seed: 42
+shuffle: true
+sampling_method: random
+anchoring: first
+
+dataset:
+  num_context_episodes: 2
+
+prediction:
+  episode_index: 0
+  num_frames: 15
+  use_full_episode: false
+  save_raw: true
+  output_dir: ${hydra:run.dir}
+  temperature: 1
+  video_fps: 2
+  video_order: shuffled  # shuffled or original
+
+mapper:
+  max_new_tokens: 1024
+  temperature: 0.75
+  retries: 3
+  mapping_prompt: ${mapping_prompts}
+
+hydra:
+  run:
+    dir: results/

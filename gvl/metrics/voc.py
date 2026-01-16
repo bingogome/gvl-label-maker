@@ -6,8 +6,8 @@ from loguru import logger
 from scipy.stats import spearmanr
 from scipy.stats._stats_py import SignificanceResult
 
-from gvl.metrics.base import Metric, MetricResult
-from gvl.utils.data_types import InferredEpisodeFewShotResult
+from gvl.metrics.base import EpisodeMetric, MetricResult
+from gvl.utils.data_types import InferredEpisodeEvalCase
 
 
 def value_order_correlation(
@@ -38,7 +38,7 @@ def value_order_correlation(
     return score
 
 
-class VOCMetric(Metric):
+class VOCMetric(EpisodeMetric):
     """Value-Order Correlation (VOC) as Spearman correlation between predicted
     completion percentages (reordered into chronological order) and their index.
     """
@@ -47,7 +47,7 @@ class VOCMetric(Metric):
     def name(self) -> str:
         return "voc"
 
-    def compute(self, example: InferredEpisodeFewShotResult) -> MetricResult:
+    def compute(self, example: InferredEpisodeEvalCase) -> MetricResult:
         eval_ep = example.eval_episode
         preds = np.array(eval_ep.shuffled_frames_predicted_completion_rates, dtype=float)
         # reorder predictions into chronological order by sorting shuffled indices

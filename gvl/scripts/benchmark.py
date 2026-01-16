@@ -2,9 +2,9 @@
 
 Steps:
 1. Instantiate data loader & model client via Hydra.
-2. Sample N cases (FewShotInput) from loader.
-3. For each case, call the shared prediction helper.
-4. Persist JSONL outputs (one line per case) + aggregated metrics summary.
+2. Sample N eval cases (EpisodeEvalCase) from loader.
+3. For each eval case, call the shared prediction helper.
+4. Persist JSONL outputs (one line per eval case) + aggregated metrics summary.
 """
 
 import json
@@ -23,7 +23,7 @@ from gvl.data_loaders.base import BaseDataLoader
 from gvl.metrics.voc import VOCMetric
 from gvl.results.prediction import aggregate_metrics
 from gvl.utils import inference as infer_utils
-from gvl.utils.frame import save_frame_visualizations
+from gvl.utils.frame import order_episode_frames, save_frame_visualizations, save_progress_video
 from gvl.mapper.base import BaseMapper
 
 
@@ -45,7 +45,7 @@ def main(config: DictConfig) -> None:
         f"model={client.__class__.__name__} prompt_template_chars={len(prompt_template)}"
     )
 
-    num_cases = int(config.prediction.num_cases)
+    num_eval_cases = int(config.prediction.num_eval_cases)
     save_raw = bool(config.prediction.save_raw)
     output_dir = Path(str(config.prediction.output_dir))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -55,10 +55,12 @@ def main(config: DictConfig) -> None:
     sampling_method = config.sampling_method
     anchoring = config.anchoring
 
-    cases = infer_utils.load_fewshot_cases(data_loader, num_cases, config.dataset.name)
-    logger.info(f"Loaded {len(cases)} (in-context trajectories (0 or more) + eval trajectory) cases for prediction")
-    if len(cases) == 0:
-        logger.warning("No cases loaded; exiting")
+    eval_cases = infer_utils.load_episode_eval_cases(data_loader, num_eval_cases, config.dataset.name)
+    logger.info(
+        f"Loaded {len(eval_cases)} (in-context trajectories (0 or more) + eval trajectory) eval cases for prediction"
+    )
+    if len(eval_cases) == 0:
+        logger.warning("No eval cases loaded; exiting")
         return
     voc_metric = VOCMetric()
     logger.debug(f"Metrics initialized: {voc_metric.name}")
@@ -67,10 +69,10 @@ def main(config: DictConfig) -> None:
     prompt_phrases = dict(config.get("prompt_phrases", {})) if hasattr(config, "prompt_phrases") else {}
     logger.debug(f"Prompt phrases: {prompt_phrases}")
     records = [
-        infer_utils.predict_on_fewshot_case(
+        infer_utils.predict_on_episode_eval_case(
             idx,
-            num_cases,
-            case,
+            num_eval_cases,
+            eval_case,
             client,
             prompt_template,
             save_raw,
@@ -80,14 +82,44 @@ def main(config: DictConfig) -> None:
             mapper=mapper,
             prompt_phrases=prompt_phrases,
         )
-        for idx, case in tqdm(enumerate(cases), total=num_cases, desc="Predicting")
+        for idx, eval_case in tqdm(enumerate(eval_cases), total=num_eval_cases, desc="Predicting")
     ]
 
     save_images = bool(config.prediction.get("save_images", True))
-    if save_images:
+    save_videos = bool(config.prediction.get("save_videos", True))
+    frames_dir = None
+    if save_images or save_videos:
         frames_dir = output_dir / f"{model_name_safe}_{starting_time}_frames"
+        frames_dir.mkdir(parents=True, exist_ok=True)
+    if save_images and frames_dir is not None:
         logger.info(f"Saving labeled frames to {frames_dir}")
         save_frame_visualizations(records, frames_dir)
+    if save_videos and frames_dir is not None:
+        video_fps = int(config.prediction.get("video_fps", 2))
+        for record in records:
+            eval_ep = record.example.eval_episode
+            eval_case_dir = frames_dir / f"eval_case_{record.index:04d}"
+            eval_case_dir.mkdir(parents=True, exist_ok=True)
+            video_path = eval_case_dir / f"eval_episode_{eval_ep.episode_index}_gt_original.mp4"
+            video_frames, video_values = order_episode_frames(
+                eval_ep,
+                eval_ep.shuffled_frames_approx_completion_rates,
+                order="original",
+            )
+            logger.info(f"Saving ground-truth video in 'original' order at {video_path}")
+            try:
+                save_progress_video(
+                    video_frames,
+                    video_values,
+                    video_path,
+                    label_prefix="gt",
+                    fps=video_fps,
+                )
+            except Exception as exc:
+                logger.exception(f"Failed to save ground-truth video at {video_path}: {exc}")
+                logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
+            else:
+                logger.info(f"Wrote ground-truth video to {video_path}")
 
     logger.info(f"Serializing {len(records)} prediction records to {jsonl_path}")
     jsonl_payload_iter = (r.to_dict(include_images=False) for r in records)
@@ -104,7 +136,7 @@ def main(config: DictConfig) -> None:
     summary['num_context_episodes'] = config.dataset.num_context_episodes
     summary['prediction_time'] = starting_time
     summary['temperature'] = float(config.prediction.get("temperature", 1.0))
-    summary['num_cases'] = len(records)
+    summary['num_eval_cases'] = len(records)
     summary['sampling'] = sampling_method
     summary['metrics'] = dataset_metrics.to_dict()
     summary['prompt_type'] = config.prompts.name

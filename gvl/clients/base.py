@@ -6,24 +6,25 @@ downstream modules.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from time import sleep
 
 from loguru import logger
 
-from gvl.utils.aliases import Event, ImageEvent, TextEvent
+from gvl.utils.aliases import Event, ImageEvent, ImageT, TextEvent
 from gvl.utils.constants import PromptPhraseKey
-from gvl.utils.data_types import ContextEpisodes, Episode
+from gvl.utils.data_types import ContextEpisodes, Episode, EvalCase, EvalFrame, EpisodeEvalCase, FrameEvalCase
 from gvl.utils.errors import MaxRetriesExceeded
 from gvl.utils.rate_limiter import SECS_PER_MIN, RateLimiter
 
 MAX_RETRIES = 4  # how many times to retry on rate limit errors
+PromptPhrases = dict[str, str | list[str]]
 
 
 class BaseModelClient(ABC):
     """Abstract base class for all model clients.
 
-    Subclasses must implement ``generate_response``.
+    Subclasses must implement ``_generate_from_events``.
     They inherit image conversion & encoding helpers to produce standardized
     244x244 PNG base64 strings for multimodal APIs.
     """
@@ -40,14 +41,37 @@ class BaseModelClient(ABC):
         # Persist a limiter instance so the rolling window spans calls.
         self._rate_limiter: RateLimiter | None = RateLimiter(max_calls=self.rpm, period=SECS_PER_MIN) if self.rpm > 0.0 else None
 
-    def generate_response(
+    def _run_with_rate_limit(self, fn: Callable[[], str]) -> str:
+        if self._rate_limiter is None:
+            return fn()
+        logger.info(f"Applying rate limit: {self.rpm} requests per minute")
+        with self._rate_limiter:
+            logger.info("Lock acquired, generating response...")
+            return fn()
+
+    def _generate_with_retry(self, fn: Callable[[], str]) -> str:
+        for call_attempt in range(1, MAX_RETRIES + 1):
+            logger.debug(f"Model generation attempt {call_attempt}/{MAX_RETRIES}")
+            try:
+                res = self._run_with_rate_limit(fn)
+                logger.info(f"Model response length: {len(res)} characters")
+                return res
+            except (RuntimeError, ValueError, OSError) as e:
+                logger.warning(f"Model generation attempt {call_attempt} failed: {e}")
+                timesleep = 2 ** (call_attempt + 2)
+                logger.warning(f"Retrying after {timesleep} seconds...")
+                logger.error(f"Error details: {e}", exc_info=True) 
+                sleep(timesleep)
+        raise MaxRetriesExceeded(MAX_RETRIES)
+
+    def generate_response_for_episode(
         self,
         prompt: str,
         eval_episode: Episode,
         context_episodes: ContextEpisodes,
         temperature: float = 0.0,
         *,
-        prompt_phrases: dict[str, str],
+        prompt_phrases: PromptPhrases,
     ) -> str:
         """Generate a textual response for a given evaluation episode.
 
@@ -61,45 +85,75 @@ class BaseModelClient(ABC):
         Returns:
             The raw model textual output.
         """
-        # Validate phrases early to provide a clear error if configuration is incomplete
-        prompt_phrases = self._validate_and_normalize_prompt_phrases(prompt_phrases)
+        return self._generate_with_prompt_phrases(
+            prompt_phrases,
+            lambda phrases: self._generate_response_for_episode_impl(
+                prompt,
+                eval_episode,
+                context_episodes,
+                temperature,
+                prompt_phrases=phrases,
+            ),
+        )
 
-        for call_attempt in range(1, MAX_RETRIES + 1):
-            logger.debug(f"Model generation attempt {call_attempt}/{MAX_RETRIES}")
-            try:
-                if self._rate_limiter is not None:
-                    logger.info(f"Applying rate limit: {self.rpm} requests per minute")
-                    with self._rate_limiter:
-                        logger.info("Lock acquired, generating response...")
-                        res = self._generate_response_impl(
-                            prompt,
-                            eval_episode,
-                            context_episodes,
-                            temperature,
-                            prompt_phrases=prompt_phrases,
-                        )
+    def generate_response_for_frame(
+        self,
+        prompt: str,
+        eval_frame: EvalFrame,
+        context_episodes: ContextEpisodes,
+        temperature: float = 0.0,
+        *,
+        prompt_phrases: PromptPhrases,
+    ) -> str:
+        """Generate a textual response for a single evaluation frame."""
+        return self._generate_with_prompt_phrases(
+            prompt_phrases,
+            lambda phrases: self._generate_response_for_frame_impl(
+                prompt,
+                eval_frame,
+                context_episodes,
+                temperature,
+                prompt_phrases=phrases,
+            ),
+        )
 
-                else:
-                    res = self._generate_response_impl(
-                        prompt,
-                        eval_episode,
-                        context_episodes,
-                        temperature,
-                        prompt_phrases=prompt_phrases,
-                    )
-                logger.info(f"Model response length: {len(res)} characters")
-            except (RuntimeError, ValueError, OSError) as e:
-                logger.warning(f"Model generation attempt {call_attempt} failed: {e}")
-                timesleep = 2 ** (call_attempt + 2)
-                logger.warning(f"Retrying after {timesleep} seconds...")
-                logger.error(f"Error details: {e}", exc_info=True) 
-                sleep(timesleep)
-                continue
-            return res
+    def generate_response_for_eval_case(
+        self,
+        prompt: str,
+        eval_case: EvalCase,
+        temperature: float = 0.0,
+        *,
+        prompt_phrases: PromptPhrases,
+    ) -> str:
+        """Generate a response for an EvalCase, dispatching by eval case type."""
+        if isinstance(eval_case, EpisodeEvalCase):
+            return self.generate_response_for_episode(
+                prompt,
+                eval_case.eval_episode,
+                eval_case.context_episodes,
+                temperature=temperature,
+                prompt_phrases=prompt_phrases,
+            )
+        if isinstance(eval_case, FrameEvalCase):
+            return self.generate_response_for_frame(
+                prompt,
+                eval_case.eval_frame,
+                eval_case.context_episodes,
+                temperature=temperature,
+                prompt_phrases=prompt_phrases,
+            )
+        raise ValueError(f"Unsupported EvalCase type: {type(eval_case)}")
 
-        raise MaxRetriesExceeded(MAX_RETRIES)
+    def _generate_with_prompt_phrases(
+        self,
+        prompt_phrases: PromptPhrases,
+        generate_fn: Callable[[PromptPhrases], str],
+    ) -> str:
+        """Normalize phrases and run the generation with retry handling."""
+        phrases = self._validate_and_normalize_prompt_phrases(prompt_phrases)
+        return self._generate_with_retry(lambda: generate_fn(phrases))
 
-    def _validate_and_normalize_prompt_phrases(self, phrases: dict[str, str]) -> dict[str, str]:
+    def _validate_and_normalize_prompt_phrases(self, phrases: PromptPhrases) -> PromptPhrases:
         """Ensure all required phrase keys are present and non-empty strings.
 
         Returns a normalized dict that includes only the required keys.
@@ -115,13 +169,29 @@ class BaseModelClient(ABC):
             PromptPhraseKey.EVAL_TASK_COMPLETION_INSTRUCTION,
         ]
         missing: list[str] = []
-        normalized: dict[str, str] = {}
+        normalized: PromptPhrases = {}
         for k in required_keys:
             key = k.value
             if key not in phrases:
                 missing.append(key)
+                continue
+            value = phrases[key]
+            if key == PromptPhraseKey.EVAL_TASK_COMPLETION_INSTRUCTION.value:
+                if isinstance(value, str):
+                    instruction_list = [value] if value else []
+                elif isinstance(value, Iterable) and not isinstance(value, (str, bytes, Mapping)):
+                    instruction_list = list(value)
+                else:
+                    instruction_list = []
+                if not instruction_list or any(not isinstance(item, str) or not item for item in instruction_list):
+                    missing.append(key)
+                    continue
+                normalized[key] = instruction_list
             else:
-                normalized[key] = phrases[key]
+                if not isinstance(value, str) or not value:
+                    missing.append(key)
+                    continue
+                normalized[key] = value
 
         if missing:
             raise ValueError("Missing or invalid (empty) prompt phrases for required keys: " + ", ".join(missing))
@@ -135,17 +205,21 @@ class BaseModelClient(ABC):
     def _iter_prompt_events(
         self,
         prompt_text: str,
-        eval_episode: Episode,
-        context_episodes: ContextEpisodes,
         *,
-        prompt_phrases: dict[str, str],
+        instruction: str,
+        starting_frame: ImageT | None,
+        eval_frames: Sequence[ImageT],
+        context_episodes: ContextEpisodes,
+        prompt_phrases: PromptPhrases,
     ) -> Iterator[Event]:
         phrases = prompt_phrases
-        # Instruction
         yield TextEvent(prompt_text)
-        yield TextEvent(phrases[PromptPhraseKey.INITIAL_SCENE_LABEL.value])
-        yield ImageEvent(eval_episode.starting_frame)
-        yield TextEvent(phrases[PromptPhraseKey.INITIAL_SCENE_COMPLETION.value])
+        if starting_frame is not None:
+            yield TextEvent(phrases[PromptPhraseKey.INITIAL_SCENE_LABEL.value])
+            yield ImageEvent(starting_frame)
+            yield TextEvent(phrases[PromptPhraseKey.INITIAL_SCENE_COMPLETION.value])
+        else:
+            logger.debug("Missing starting_frame; skipping initial scene anchor.")
 
         # Context frames (with known completion)
         counter = 1
@@ -157,38 +231,71 @@ class BaseModelClient(ABC):
                 counter += 1
 
         for instruction_str in phrases[PromptPhraseKey.EVAL_TASK_COMPLETION_INSTRUCTION.value]:
-            yield TextEvent(instruction_str.format(instruction=eval_episode.instruction))
+            yield TextEvent(instruction_str.format(instruction=instruction))
 
-        # contents.append(
-        #     f"Now, for the task of {eval_episode.instruction}, output the task completion percentage for the following frames "
-        #     "that are presented in random order. For each frame, format your response as follow: "
-        #     "Frame {i}: Task Completion Percentages:{}%"
-        # )
-        # contents.append("Be rigorous and precise; percentage reflects task completion.")
-        # contents.append("Remember: frames are in random order.")
-
-        # Evaluation frames (no completion values)
-        for frame in eval_episode.shuffled_frames:
+        for frame in eval_frames:
             yield TextEvent(phrases[PromptPhraseKey.EVAL_FRAME_LABEL_TEMPLATE.value].format(i=counter))
             yield ImageEvent(frame)
             yield TextEvent("")
             counter += 1
 
-    def _generate_response_impl(
+    def _generate_response_for_episode_impl(
         self,
         prompt: str,
         eval_episode: Episode,
         context_episodes: ContextEpisodes,
         temperature: float = 0.0,
         *,
-        prompt_phrases: dict[str, str],
+        prompt_phrases: PromptPhrases,
     ) -> str:
         """Default implementation builds generic events and delegates to provider hook."""
+        return self._generate_from_parts(
+            prompt,
+            instruction=eval_episode.instruction,
+            starting_frame=eval_episode.starting_frame,
+            eval_frames=eval_episode.shuffled_frames,
+            context_episodes=context_episodes,
+            temperature=temperature,
+            prompt_phrases=prompt_phrases,
+        )
+
+    def _generate_response_for_frame_impl(
+        self,
+        prompt: str,
+        eval_frame: EvalFrame,
+        context_episodes: ContextEpisodes,
+        temperature: float = 0.0,
+        *,
+        prompt_phrases: PromptPhrases,
+    ) -> str:
+        return self._generate_from_parts(
+            prompt,
+            instruction=eval_frame.instruction,
+            starting_frame=eval_frame.starting_frame,
+            eval_frames=[eval_frame.frame],
+            context_episodes=context_episodes,
+            temperature=temperature,
+            prompt_phrases=prompt_phrases,
+        )
+
+    def _generate_from_parts(
+        self,
+        prompt: str,
+        *,
+        instruction: str,
+        starting_frame: ImageT | None,
+        eval_frames: Sequence[ImageT],
+        context_episodes: ContextEpisodes,
+        temperature: float,
+        prompt_phrases: PromptPhrases,
+    ) -> str:
         events = list(
             self._iter_prompt_events(
                 prompt,
-                eval_episode,
-                context_episodes,
+                instruction=instruction,
+                starting_frame=starting_frame,
+                eval_frames=eval_frames,
+                context_episodes=context_episodes,
                 prompt_phrases=prompt_phrases,
             )
         )
