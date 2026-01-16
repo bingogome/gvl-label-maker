@@ -107,42 +107,68 @@ class EvalFrame:
 
     Attributes
     - instruction: Natural-language description of the task to complete.
-    - starting_frame: The first observation of the episode (for prompt anchoring).
-    - episode_index: Index of this episode within the source dataset.
-    - original_frame_index: Index of the frame within the original episode.
     - frame: The evaluation frame to label or predict.
+    - starting_frame: Optional anchor frame for prompt context.
     - task_completion_rate: Optional ground-truth completion rate (if known).
     """
 
     instruction: str
-    starting_frame: ImageNumpy
-    episode_index: int
-    original_frame_index: int
     frame: ImageNumpy
+    starting_frame: ImageNumpy | None = None
     task_completion_rate: int | None = None
 
 
 @dataclass
-class EvalCase:
-    """
-    Container for a single training/evaluation case consisting of one
-    evaluation episode and multiple context episodes.
-    """
+class InferredFrame(EvalFrame):
+    """EvalFrame with a model-predicted completion rate."""
 
-    eval_episode: Episode
+    predicted_task_completion_rate: int | None = None
+
+    @classmethod
+    def from_prediction(cls, frame: EvalFrame, prediction: int | None) -> "InferredFrame":
+        return cls(
+            instruction=frame.instruction,
+            frame=frame.frame,
+            starting_frame=frame.starting_frame,
+            task_completion_rate=frame.task_completion_rate,
+            predicted_task_completion_rate=prediction,
+        )
+
+
+@dataclass(kw_only=True)
+class EvalCase:
+    """Base class for evaluation cases with context episodes."""
+
     context_episodes: ContextEpisodes
 
     def __post_init__(self) -> None:
         if not isinstance(self.context_episodes, ContextEpisodes):
             self.context_episodes = ContextEpisodes(list(self.context_episodes))
 
-    def __repr__(self) -> str:
-        eval_frames = len(self.eval_episode.shuffled_frames)
+    def _context_summary(self) -> tuple[int, list[int], int]:
         ctx_count = len(self.context_episodes)
         ctx_frames_list = [len(ep.shuffled_frames) for ep in self.context_episodes]
         ctx_frames_total = sum(ctx_frames_list)
+        return ctx_count, ctx_frames_list, ctx_frames_total
+
+
+@dataclass
+class EpisodeEvalCase(EvalCase):
+    """
+    Container for a single training/evaluation case consisting of one
+    evaluation episode and multiple context episodes.
+    """
+
+    eval_episode: Episode
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+    def __repr__(self) -> str:
+        eval_frames = len(self.eval_episode.shuffled_frames)
+        ctx_count, ctx_frames_list, ctx_frames_total = self._context_summary()
         return (
-            "EvalCase("
+            "EpisodeEvalCase("
             f"eval_episode_index={self.eval_episode.episode_index}, "
             f"eval_frames={eval_frames}, "
             f"context_episodes={ctx_count}, "
@@ -153,26 +179,24 @@ class EvalCase:
 
 
 @dataclass
-class FrameCase:
+class FrameEvalCase(EvalCase):
     """
     Container for a single evaluation frame and optional context episodes.
     """
 
     eval_frame: EvalFrame
-    context_episodes: ContextEpisodes
 
     def __post_init__(self) -> None:
-        if not isinstance(self.context_episodes, ContextEpisodes):
-            self.context_episodes = ContextEpisodes(list(self.context_episodes))
+        super().__post_init__()
 
     def __repr__(self) -> str:
-        ctx_count = len(self.context_episodes)
-        ctx_frames_list = [len(ep.shuffled_frames) for ep in self.context_episodes]
-        ctx_frames_total = sum(ctx_frames_list)
+        ctx_count, ctx_frames_list, ctx_frames_total = self._context_summary()
+        instruction = self.eval_frame.instruction.replace("\n", " ")
+        if len(instruction) > 32:
+            instruction = f"{instruction[:29]}..."
         return (
-            "FrameCase("
-            f"eval_episode_index={self.eval_frame.episode_index}, "
-            f"eval_frame_index={self.eval_frame.original_frame_index}, "
+            "FrameEvalCase("
+            f"instruction={instruction!r}, "
             f"context_episodes={ctx_count}, "
             f"context_frames_per_episode={ctx_frames_list}, "
             f"context_frames_total={ctx_frames_total}"
@@ -181,15 +205,23 @@ class FrameCase:
 
 
 @dataclass
-class InferredFewShotResult:
+class InferredEpisodeFewShotResult(EvalCase):
     """
-    Container for a single evaluation example consisting of one
+    Container for a single evaluation case consisting of one
     evaluation episode and multiple context episodes, with model predictions.
     """
 
     eval_episode: InferredEpisode
-    context_episodes: ContextEpisodes
 
     def __post_init__(self) -> None:
-        if not isinstance(self.context_episodes, ContextEpisodes):
-            self.context_episodes = ContextEpisodes(list(self.context_episodes))
+        super().__post_init__()
+
+
+@dataclass
+class InferredFrameFewShotResult(EvalCase):
+    """Container for a single evaluation frame case with model predictions."""
+
+    eval_frame: InferredFrame
+
+    def __post_init__(self) -> None:
+        super().__post_init__()

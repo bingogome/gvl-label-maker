@@ -3,7 +3,7 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from gvl.utils.data_types import InferredFewShotResult
+from gvl.utils.data_types import InferredEpisodeFewShotResult
 
 
 @dataclass
@@ -12,7 +12,7 @@ class PredictionRecord:
 
     index: int
     dataset: str
-    example: InferredFewShotResult
+    example: InferredEpisodeFewShotResult
     predicted_percentages: list[int]
     valid_length: bool
     metrics: dict[str, Any]

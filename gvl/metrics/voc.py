@@ -7,7 +7,7 @@ from scipy.stats import spearmanr
 from scipy.stats._stats_py import SignificanceResult
 
 from gvl.metrics.base import Metric, MetricResult
-from gvl.utils.data_types import InferredFewShotResult
+from gvl.utils.data_types import InferredEpisodeFewShotResult
 
 
 def value_order_correlation(
@@ -47,7 +47,7 @@ class VOCMetric(Metric):
     def name(self) -> str:
         return "voc"
 
-    def compute(self, example: InferredFewShotResult) -> MetricResult:
+    def compute(self, example: InferredEpisodeFewShotResult) -> MetricResult:
         eval_ep = example.eval_episode
         preds = np.array(eval_ep.shuffled_frames_predicted_completion_rates, dtype=float)
         # reorder predictions into chronological order by sorting shuffled indices

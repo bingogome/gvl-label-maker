@@ -12,8 +12,8 @@ from gvl.metrics.base import MetricResult
 from gvl.metrics.voc import VOCMetric
 from gvl.results.prediction import PredictionRecord
 from gvl.utils.constants import N_DEBUG_PROMPT_CHARS
-from gvl.utils.data_types import EvalCase as FewShotInput
-from gvl.utils.data_types import InferredEpisode, InferredFewShotResult
+from gvl.utils.data_types import EpisodeEvalCase as FewShotInput
+from gvl.utils.data_types import InferredEpisode, InferredEpisodeFewShotResult
 from gvl.utils.errors import PercentagesCountMismatch, PercentagesNormalizationError
 from gvl.utils.hydra import ensure_required_keys
 from gvl.utils.prompts import format_prompt
@@ -23,9 +23,9 @@ from gvl.mapper.base import BaseMapper
 def build_inferred_case(
     case: FewShotInput,
     predicted: list[int],
-) -> InferredFewShotResult:
+) -> InferredEpisodeFewShotResult:
     inferred_ep = InferredEpisode.from_predictions(case.eval_episode, predictions=predicted)
-    return InferredFewShotResult(eval_episode=inferred_ep, context_episodes=case.context_episodes)
+    return InferredEpisodeFewShotResult(eval_episode=inferred_ep, context_episodes=case.context_episodes)
 
 
 def save_jsonl(records: Iterable[dict], path: Path) -> None:
@@ -84,7 +84,7 @@ def predict_on_fewshot_case(
     """
     logger.info(f"Processing case {idx + 1}/{total} (episode_index={case.eval_episode.episode_index}) from {dataset_name}")
     prompt = format_prompt(prompt_template, instruction=case.eval_episode.instruction)
-    logger.debug(f"Prompt (truncated {N_DEBUG_PROMPT_CHARS} chars): {prompt[:N_DEBUG_PROMPT_CHARS]}...")
+    logger.debug(f"Prompt (truncated to {N_DEBUG_PROMPT_CHARS} chars): {prompt[:N_DEBUG_PROMPT_CHARS]}...")
     try:
         response_text = client.generate_response(
             prompt,
@@ -120,7 +120,7 @@ def predict_on_fewshot_case(
         )
         error_count[PercentagesCountMismatch.__name__] += 1
 
-    inferred: InferredFewShotResult = build_inferred_case(case, predicted)
+    inferred: InferredEpisodeFewShotResult = build_inferred_case(case, predicted)
 
     if sum(error_count.values()) > 0:
         metric_res = MetricResult(name=voc_metric.name, value=0, details={

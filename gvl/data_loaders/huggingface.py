@@ -6,7 +6,7 @@ from loguru import logger
 
 from gvl.data_loaders.base import BaseDataLoader
 from gvl.utils.data_types import ContextEpisodes, Episode
-from gvl.utils.data_types import EvalCase as FewShotInput
+from gvl.utils.data_types import EpisodeEvalCase as FewShotInput
 
 disable_progress_bar()
 

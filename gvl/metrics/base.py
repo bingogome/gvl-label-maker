@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
-from gvl.utils.data_types import InferredFewShotResult
+from gvl.utils.data_types import InferredEpisodeFewShotResult
 
 
 @dataclass
@@ -21,5 +21,5 @@ class Metric(ABC):
         pass
 
     @abstractmethod
-    def compute(self, example: InferredFewShotResult) -> MetricResult:
+    def compute(self, example: InferredEpisodeFewShotResult) -> MetricResult:
         pass

@@ -6,12 +6,12 @@ from loguru import logger
 
 from gvl.utils.aliases import ImageNumpy, ImageT
 from gvl.utils.data_types import Episode
-from gvl.utils.data_types import EvalCase as FewShotInput
+from gvl.utils.data_types import EpisodeEvalCase as FewShotInput
 from gvl.utils.images import to_numpy
 
 
 class BaseDataLoader(ABC):
-    """Abstract base for building Episode/EvalCase structures.
+    """Abstract base for building Episode/EpisodeEvalCase structures.
 
     Subclasses should implement ``load_fewshot_input`` and optionally ``reset``.
     This base provides utility methods to transform raw frames into an
