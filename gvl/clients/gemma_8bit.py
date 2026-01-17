@@ -2,6 +2,7 @@ from typing import cast
 
 import torch
 from loguru import logger
+from torchao.quantization import Int8WeightOnlyConfig
 from transformers import AutoProcessor, Gemma3ForConditionalGeneration, TorchAoConfig
 
 from gvl.clients.base import BaseModelClient
@@ -10,13 +11,15 @@ from gvl.utils.constants import MAX_TOKENS_TO_GENERATE
 from gvl.utils.images import to_pil
 
 
-class GemmaClient(BaseModelClient):
+class Gemma8BitClient(BaseModelClient):
     """Client for Gemma 3 image-text model (conditional generation)."""
 
     def __init__(self, model_name: str = "google/gemma-3-4b-it", rpm: float = 0.0, max_input_length: int = 32768):
         super().__init__(rpm=rpm)
         logger.info(f"Loading Gemma model {model_name} ...")
-        quantization_config = TorchAoConfig("int8_weight_only")
+        quantization_config = TorchAoConfig(
+            Int8WeightOnlyConfig(set_inductor_config=False)
+        )
         self.model = Gemma3ForConditionalGeneration.from_pretrained(
             model_name,
             dtype=torch.bfloat16,

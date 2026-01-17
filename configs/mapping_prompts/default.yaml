@@ -11,6 +11,7 @@ template: |
   **Important:** 
   - Your response must **only** contain the final JSON object. Do not include any additional text, explanations, apologies, or markdown formatting. 
   - Don't take into consideration overall task completion, starting frame completion, or any other non-specific percentages.
+  - Make sure the number of frames in the list corresponds to the number of unique frames mentioned in the user's message. Do not add extra numbers or omit any frames.
 
   ---
 

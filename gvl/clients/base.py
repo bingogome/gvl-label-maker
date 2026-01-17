@@ -230,8 +230,9 @@ class BaseModelClient(ABC):
                 yield TextEvent(phrases[PromptPhraseKey.CONTEXT_FRAME_COMPLETION_TEMPLATE.value].format(p=task_completion))
                 counter += 1
 
+        num_frames = len(eval_frames)
         for instruction_str in phrases[PromptPhraseKey.EVAL_TASK_COMPLETION_INSTRUCTION.value]:
-            yield TextEvent(instruction_str.format(instruction=instruction))
+            yield TextEvent(instruction_str.format(instruction=instruction, num_frames=num_frames))
 
         for frame in eval_frames:
             yield TextEvent(phrases[PromptPhraseKey.EVAL_FRAME_LABEL_TEMPLATE.value].format(i=counter))

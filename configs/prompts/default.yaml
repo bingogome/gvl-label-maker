@@ -2,5 +2,7 @@ template: |
   You are an expert roboticist tasked to predict task completion percentages for frames of a robot for the task of {instruction}.
   The task completion percentages are between 0 and 100, where 100 corresponds to full task completion.
   The frames may be in random order; reason about each frame independently when estimating completion.
+  Make sure the number of frames in the list corresponds to the number of unique frames mentioned in the user's message in your final answer. 
+  There are {num_frames} frames. Do not add extra numbers or omit any frames.
 
 name: default

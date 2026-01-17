@@ -8,10 +8,11 @@ def get_prompt(instruction: str) -> str:
     )
 
 
-def format_prompt(template: str, *, instruction: str) -> str:
+def format_prompt(template: str, *, instruction: str, num_frames: int) -> str:
     """Format a prompt template with required placeholders.
 
     Required placeholders:
     - {instruction}
+    - {num_frames}
     """
-    return template.format(instruction=instruction)
+    return template.format(instruction=instruction, num_frames=num_frames)

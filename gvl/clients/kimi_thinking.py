@@ -2,6 +2,7 @@
 No longer working. Keep for reference.
 """
 
+
 from typing import cast
 
 import torch
@@ -15,12 +16,12 @@ from gvl.utils.errors import InputTooLongError
 from gvl.utils.images import to_pil
 
 
-class KimiInstructClient(BaseModelClient):
-    """Client for Kimi Instruct VL model."""
+class KimiThinkingClient(BaseModelClient):
+    """Client for Kimi Thinking VL model."""
 
-    def __init__(self, model_name: str = "moonshotai/Kimi-VL-A3B-Instruct", rpm: float = 0.0, max_input_length: int = 32768 ):
-        super().__init__(rpm=rpm, max_input_length=max_input_length)
-        logger.info(f"Loading Kimi Instruct model {model_name} ...")
+    def __init__(self, model_name: str = "moonshotai/Kimi-VL-A3B-Thinking-2506", rpm: float = 0.0, max_input_length: int = 32768 ):
+        super().__init__(rpm=rpm)
+        logger.info(f"Loading Kimi Thinking model {model_name} ...")
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype="auto",
@@ -39,20 +40,20 @@ class KimiInstructClient(BaseModelClient):
             elif isinstance(ev, ImageEvent):
                 messages[0]["content"].append({"type": "image", "image": to_pil(cast(ImageT, ev.image))})
 
-        text = self.processor.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-        )
+
+        prompt_text = self.processor.apply_chat_template(messages, add_generation_prompt=True)
         inputs = self.processor(
+            text=prompt_text,
             images=images,
-            text=text,
             return_tensors="pt",
-        ).to(self.model.device,
-            dtype=torch.bfloat16,)
+        ).to(
+            self.model.device,
+            dtype=torch.bfloat16,
+        )
 
         input_len = inputs["input_ids"].shape[-1]
-        if input_len > self.max_input_length:
-            raise InputTooLongError(input_len, self.max_input_length)
+        if input_len > 128_000:
+            raise InputTooLongError(input_len, 128_000)
         logger.info(f"Input length: {input_len}")
 
         generated_ids = self.model.generate(

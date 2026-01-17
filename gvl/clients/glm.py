@@ -34,8 +34,8 @@ class GLMClient(BaseModelClient):
             if isinstance(ev, TextEvent):
                 messages[0]["content"].append({"type": "text", "text": ev.text})
             elif isinstance(ev, ImageEvent):
-                messages[0]["content"].append({"type": "image"})
-                images.append(to_pil(cast(ImageT, ev.image)))
+                messages[0]["content"].append({"type": "image", "image": to_pil(cast(ImageT, ev.image))})
+
 
 
         prompt = self.processor.apply_chat_template(

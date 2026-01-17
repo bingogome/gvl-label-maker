@@ -29,7 +29,6 @@ mapper:
   mapping_prompt: ${mapping_prompts}
 
 hydra:
-  mode: MULTIRUN 
   run:
     dir: results/${now:%Y-%m-%d}/${now:%H-%M-%S}
   sweep:
@@ -40,9 +39,4 @@ hydra:
     chdir: true
   sweeper:
     params:
-      # model: gemma_8bit, gemma, qwen25, qwen3, glm, mimo, cosmos, cosmos2 #, gemini, openai
-
-      # Not working
-      # model: kimi, kimi_thinking, molmo2
-
-      model: gemma_8bit
+      model: gemma_8bit, gemma, qwen, cosmos, glm, kimi, mimo

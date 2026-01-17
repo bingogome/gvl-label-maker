@@ -120,6 +120,26 @@ def main(config: DictConfig) -> None:
                 logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
             else:
                 logger.info(f"Wrote ground-truth video to {video_path}")
+            pred_video_path = eval_case_dir / f"eval_episode_{eval_ep.episode_index}_pred_original.mp4"
+            pred_frames, pred_values = order_episode_frames(
+                eval_ep,
+                eval_ep.shuffled_frames_predicted_completion_rates,
+                order="original",
+            )
+            logger.info(f"Saving prediction video in 'original' order at {pred_video_path}")
+            try:
+                save_progress_video(
+                    pred_frames,
+                    pred_values,
+                    pred_video_path,
+                    label_prefix="pred",
+                    fps=video_fps,
+                )
+            except Exception as exc:
+                logger.exception(f"Failed to save prediction video at {pred_video_path}: {exc}")
+                logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
+            else:
+                logger.info(f"Wrote prediction video to {pred_video_path}")
 
     logger.info(f"Serializing {len(records)} prediction records to {jsonl_path}")
     jsonl_payload_iter = (r.to_dict(include_images=False) for r in records)

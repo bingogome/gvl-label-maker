@@ -88,9 +88,10 @@ def _generate_eval_case_response(
     idx: int,
     prompt_template: str,
     instruction: str,
+    num_frames: int,
     generate_fn: Callable[[str], str],
 ) -> str:
-    prompt = format_prompt(prompt_template, instruction=instruction)
+    prompt = format_prompt(prompt_template, instruction=instruction, num_frames=num_frames)
     logger.debug(f"Prompt (truncated to {N_DEBUG_PROMPT_CHARS} chars): {prompt[:N_DEBUG_PROMPT_CHARS]}...")
     try:
         response_text = generate_fn(prompt)
@@ -161,6 +162,7 @@ def predict_on_episode_eval_case(
         idx=idx,
         prompt_template=prompt_template,
         instruction=eval_case.eval_episode.instruction,
+        num_frames=len(eval_case.eval_episode.shuffled_frames),
         generate_fn=lambda prompt: client.generate_response_for_episode(
             prompt,
             eval_case.eval_episode,
@@ -228,6 +230,7 @@ def predict_on_frame_eval_case(
         idx=idx,
         prompt_template=prompt_template,
         instruction=eval_case.eval_frame.instruction,
+        num_frames=1,
         generate_fn=lambda prompt: client.generate_response_for_frame(
             prompt,
             eval_case.eval_frame,
