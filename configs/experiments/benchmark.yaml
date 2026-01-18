@@ -17,7 +17,7 @@ dataset:
   num_context_episodes: 2  # How many in-context episodes to provide
 
 prediction:
-  num_eval_cases: 15   # How many few-shot eval cases to evaluate
+  num_eval_cases: 3   # How many few-shot eval cases to evaluate
   save_raw: true    # Whether to dump raw model outputs
   output_dir: ${hydra:runtime.output_dir}
   temperature: 1 # Sampling temperature for generation
@@ -40,9 +40,13 @@ hydra:
     chdir: true
   sweeper:
     params:
-      # model: gemma_8bit, gemma, qwen25, qwen3, glm, mimo, cosmos, cosmos2 #, gemini, openai
+      model: gemma_8bit, gemma, qwen3_8bit, qwen3, qwen25, mimo, cosmos, cosmos2, gemini3, gemini25, geminirob15, openai52, openai52pro
 
       # Not working
       # model: kimi, kimi_thinking, molmo2
 
-      model: gemma_8bit
+      # Single test
+      # model: cosmos2
+
+      # Need handling
+      # model: glm

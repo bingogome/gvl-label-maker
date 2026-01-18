@@ -1,0 +1,3 @@
+_target_: gvl.clients.qwen3.Qwen3Client
+model_name: Qwen/Qwen3-VL-30B-A3B-Instruct
+max_input_length: 32000
