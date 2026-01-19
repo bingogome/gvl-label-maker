@@ -5,7 +5,7 @@ Inspired by [OpenGVL](https://github.com/budzianowski/opengvl), based on papers 
 ## Features
 
 New:
-- Anchor frames: start/middle/last with customizable anchor labels/completions in prompt phrases.
+- List of anchor frames: customizable anchors list, instead of only one frame.
 - Conversation history logging with images and mapper outputs.
 - Quantization
 - Additional recent models
@@ -19,6 +19,10 @@ Old:
 - Output parsing via regex or Gemini-based mapper with configurable mapping prompts.
 - Metrics: Value-Order Correlation (VOC) for episode predictions and frame error for frame predictions.
 - Outputs: streaming JSONL per prediction, summary JSON, and optional labeled frames/videos.
+
+## Dependency
+
+Lerobot pip toggle on no-deps
 
 ## Known Issues
 
