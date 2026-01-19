@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 import numpy as np
 from datasets.utils.logging import disable_progress_bar
 from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
@@ -27,8 +29,8 @@ class HuggingFaceDataLoader(BaseDataLoader):
         shuffle: bool = False,
         seed: int = 42,
         max_episodes: int | None = None,
-        sampling_method: str = 'random',
-        anchoring: str = 'first',
+        sampling_method: str = "random",
+        anchoring: str | Sequence[str] | None = "first",
     ) -> None:
         super().__init__(
             num_frames=num_frames,
@@ -77,7 +79,12 @@ class HuggingFaceDataLoader(BaseDataLoader):
         ctx_eps: list[Episode] = []
         for idx in chosen:
             frames, instruction = self._load_episode_frames(idx)
-            ctx_eps.append(self._build_episode(frames=frames, instruction=instruction, episode_index=idx))
+            ctx_eps.append(self._build_episode(
+                frames=frames,
+                instruction=instruction,
+                episode_index=idx,
+                anchoring=self.anchoring,
+            ))
         return ContextEpisodes(ctx_eps)
 
     def load_context_episodes(self, *, exclude_index: int | None = None) -> ContextEpisodes:

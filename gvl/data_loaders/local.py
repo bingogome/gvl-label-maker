@@ -28,7 +28,8 @@ class LocalDataLoader(BaseDataLoader):
         num_context_episodes: int = 0,
         shuffle: bool = False,
         seed: int = 42,
-        sampling_method: str = 'random',
+        sampling_method: str = "random",
+        anchoring: str | Sequence[str] | None = "first",
     ) -> None:
         super().__init__(
             num_frames=num_frames,
@@ -42,6 +43,7 @@ class LocalDataLoader(BaseDataLoader):
         self.episodes_files: list[list[str]] = [list(ep) for ep in episodes_files]
         self.instruction = instruction or ""
         self.sampling_method = sampling_method
+        self.anchoring = anchoring
 
     def _load_images(self, paths: list[Path]):
         images = []
@@ -87,6 +89,7 @@ class LocalDataLoader(BaseDataLoader):
                 instruction=self.instruction,
                 episode_index=idx,
                 sampling_method=self.sampling_method,
+                anchoring=self.anchoring,
             ))
         return ContextEpisodes(ctx_eps)
 
@@ -104,6 +107,7 @@ class LocalDataLoader(BaseDataLoader):
             frames=frames,
             instruction=self.instruction,
             episode_index=episode_index or 0,
-            sampling_method=self.sampling_method
+            sampling_method=self.sampling_method,
+            anchoring=self.anchoring,
         )
         return EpisodeEvalCase(eval_episode=ep, context_episodes=ContextEpisodes([]))

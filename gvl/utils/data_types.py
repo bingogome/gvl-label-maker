@@ -5,6 +5,25 @@ from gvl.utils.aliases import ImageNumpy
 from gvl.utils.errors import OriginalFramesLengthMismatch, ShuffledFramesIndicesNotSubset, ShuffledFramesLengthMismatch
 
 
+def _normalize_anchor_kind(kind: str) -> str:
+    value = str(kind).strip().lower()
+    if value == "first":
+        return "start"
+    if value in {"start", "middle", "last"}:
+        return value
+    raise ValueError(f"Unknown anchor kind: {kind}")
+
+
+def _default_anchor_kinds(count: int) -> list[str]:
+    if count <= 0:
+        return []
+    if count == 1:
+        return ["start"]
+    if count == 2:
+        return ["start", "last"]
+    return ["start"] + ["middle"] * (count - 2) + ["last"]
+
+
 @dataclass
 class Episode:
     """
@@ -13,7 +32,8 @@ class Episode:
 
     Attributes
     - instruction: Natural-language description of the task to complete.
-    - starting_frame: The first observation of the (sub)episode.
+    - anchor_frames: Anchor frames for prompt context (zero or more).
+    - anchor_kinds: Anchor kinds aligned with anchor_frames (start, middle, last).
     - episode_index: Index of this episode within the source dataset.
     - original_frames_indices: Sorted indices from the original episode that
         define the selected subsequence.
@@ -36,15 +56,30 @@ class Episode:
     """
 
     instruction: str
-    starting_frame: ImageNumpy
+    anchor_frames: list[ImageNumpy]
     episode_index: int
     original_frames_indices: list[int]  # subsequence of original episode indices, sorted
     shuffled_frames_indices: list[int]  # original-episode indices in model input (shuffled) order
     shuffled_frames_approx_completion_rates: list[int]  # aligned 1:1 with shuffled_frames
     original_frames_task_completion_rates: list[int]  # aligned 1:1 with original_frames_indices
     shuffled_frames: list[ImageNumpy]  # frames ordered per shuffled_frames_indices
+    anchor_kinds: list[str] | None
 
     def __post_init__(self):
+        if self.anchor_frames is None:
+            raise ValueError("anchor_frames cannot be None")
+        if isinstance(self.anchor_frames, (list, tuple)):
+            self.anchor_frames = list(self.anchor_frames)
+        else:
+            self.anchor_frames = [self.anchor_frames]
+        if self.anchor_kinds is None:
+            self.anchor_kinds = _default_anchor_kinds(len(self.anchor_frames))
+        elif isinstance(self.anchor_kinds, (list, tuple)):
+            self.anchor_kinds = [_normalize_anchor_kind(k) for k in self.anchor_kinds]
+        else:
+            self.anchor_kinds = [_normalize_anchor_kind(self.anchor_kinds)]
+        if len(self.anchor_kinds) != len(self.anchor_frames):
+            raise ValueError("anchor_kinds length must match anchor_frames length")
         if len(self.original_frames_indices) != len(self.original_frames_task_completion_rates):
             raise OriginalFramesLengthMismatch(len(self.original_frames_indices), len(self.original_frames_task_completion_rates))
         if not (len(self.shuffled_frames_indices) == len(self.shuffled_frames) == len(self.shuffled_frames_approx_completion_rates)):
@@ -73,7 +108,7 @@ class InferredEpisode(Episode):
         """Simple factory method to create an InferredEpisode from an Episode and predictions."""
         return cls(
             instruction=episode.instruction,
-            starting_frame=episode.starting_frame,
+            anchor_frames=episode.anchor_frames,
             episode_index=episode.episode_index,
             original_frames_indices=episode.original_frames_indices,
             shuffled_frames_indices=episode.shuffled_frames_indices,
@@ -81,6 +116,7 @@ class InferredEpisode(Episode):
             original_frames_task_completion_rates=episode.original_frames_task_completion_rates,
             shuffled_frames=episode.shuffled_frames,
             shuffled_frames_predicted_completion_rates=predictions,
+            anchor_kinds=episode.anchor_kinds,
         )
 
 
@@ -108,13 +144,32 @@ class EvalFrame:
     Attributes
     - instruction: Natural-language description of the task to complete.
     - frame: The evaluation frame to label or predict.
-    - starting_frame: Optional anchor frame for prompt context.
+    - anchor_frames: Optional anchor frame(s) for prompt context.
+    - anchor_kinds: Optional anchor kinds aligned with anchor_frames.
     - task_completion_rate: Optional ground-truth completion rate (if known).
     """
 
     instruction: str
     frame: ImageNumpy
-    starting_frame: ImageNumpy | None = None
+    anchor_frames: list[ImageNumpy] | None = None
+    anchor_kinds: list[str] | None = None
+
+    def __post_init__(self) -> None:
+        if self.anchor_frames is None:
+            self.anchor_kinds = None
+            return
+        if isinstance(self.anchor_frames, (list, tuple)):
+            self.anchor_frames = list(self.anchor_frames)
+        else:
+            self.anchor_frames = [self.anchor_frames]
+        if self.anchor_kinds is None:
+            self.anchor_kinds = _default_anchor_kinds(len(self.anchor_frames))
+        elif isinstance(self.anchor_kinds, (list, tuple)):
+            self.anchor_kinds = [_normalize_anchor_kind(k) for k in self.anchor_kinds]
+        else:
+            self.anchor_kinds = [_normalize_anchor_kind(self.anchor_kinds)]
+        if len(self.anchor_kinds) != len(self.anchor_frames):
+            raise ValueError("anchor_kinds length must match anchor_frames length")
     task_completion_rate: int | None = None
 
 
@@ -129,9 +184,10 @@ class InferredFrame(EvalFrame):
         return cls(
             instruction=frame.instruction,
             frame=frame.frame,
-            starting_frame=frame.starting_frame,
+            anchor_frames=frame.anchor_frames,
             task_completion_rate=frame.task_completion_rate,
             predicted_task_completion_rate=prediction,
+            anchor_kinds=frame.anchor_kinds,
         )
 
 

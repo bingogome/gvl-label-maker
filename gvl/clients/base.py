@@ -7,6 +7,9 @@ downstream modules.
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from datetime import datetime
+import os
+from pathlib import Path
 from time import sleep
 
 from loguru import logger
@@ -15,6 +18,7 @@ from gvl.utils.aliases import Event, ImageEvent, ImageT, TextEvent
 from gvl.utils.constants import PromptPhraseKey
 from gvl.utils.data_types import ContextEpisodes, Episode, EvalCase, EvalFrame, EpisodeEvalCase, FrameEvalCase
 from gvl.utils.errors import MaxRetriesExceeded
+from gvl.utils.images import to_pil
 from gvl.utils.rate_limiter import SECS_PER_MIN, RateLimiter
 
 MAX_RETRIES = 4  # how many times to retry on rate limit errors
@@ -40,6 +44,10 @@ class BaseModelClient(ABC):
         self.max_input_length = max_input_length
         # Persist a limiter instance so the rolling window spans calls.
         self._rate_limiter: RateLimiter | None = RateLimiter(max_calls=self.rpm, period=SECS_PER_MIN) if self.rpm > 0.0 else None
+        log_dir = os.getenv("GVL_CONVERSATION_LOG_DIR")
+        self._conversation_log_dir = Path(log_dir) if log_dir else None
+        self._conversation_log_counter = 0
+        self._last_conversation_log_path: Path | None = None
 
     def _run_with_rate_limit(self, fn: Callable[[], str]) -> str:
         if self._rate_limiter is None:
@@ -160,9 +168,19 @@ class BaseModelClient(ABC):
         Raises ValueError if any required key is missing, not a string, or an empty string.
         Logs a debug message for any extra keys.
         """
+        anchor_label_keys = [
+            PromptPhraseKey.ANCHOR_SCENE_LABEL_START,
+            PromptPhraseKey.ANCHOR_SCENE_LABEL_MIDDLE,
+            PromptPhraseKey.ANCHOR_SCENE_LABEL_LAST,
+        ]
+        anchor_completion_keys = [
+            PromptPhraseKey.ANCHOR_SCENE_COMPLETION_START,
+            PromptPhraseKey.ANCHOR_SCENE_COMPLETION_MIDDLE,
+            PromptPhraseKey.ANCHOR_SCENE_COMPLETION_LAST,
+        ]
         required_keys = [
-            PromptPhraseKey.INITIAL_SCENE_LABEL,
-            PromptPhraseKey.INITIAL_SCENE_COMPLETION,
+            *anchor_label_keys,
+            *anchor_completion_keys,
             PromptPhraseKey.CONTEXT_FRAME_LABEL_TEMPLATE,
             PromptPhraseKey.CONTEXT_FRAME_COMPLETION_TEMPLATE,
             PromptPhraseKey.EVAL_FRAME_LABEL_TEMPLATE,
@@ -207,19 +225,57 @@ class BaseModelClient(ABC):
         prompt_text: str,
         *,
         instruction: str,
-        starting_frame: ImageT | None,
+        anchor_frames: Sequence[ImageT] | None,
+        anchor_kinds: Sequence[str] | None,
         eval_frames: Sequence[ImageT],
         context_episodes: ContextEpisodes,
         prompt_phrases: PromptPhrases,
     ) -> Iterator[Event]:
         phrases = prompt_phrases
         yield TextEvent(prompt_text)
-        if starting_frame is not None:
-            yield TextEvent(phrases[PromptPhraseKey.INITIAL_SCENE_LABEL.value])
-            yield ImageEvent(starting_frame)
-            yield TextEvent(phrases[PromptPhraseKey.INITIAL_SCENE_COMPLETION.value])
+        if anchor_frames:
+            def _normalize_kind(kind: str) -> str:
+                key = str(kind).strip().lower()
+                if key == "first":
+                    return "start"
+                if key in {"start", "middle", "last"}:
+                    return key
+                raise ValueError(f"Unknown anchor kind: {kind}")
+
+            def _default_kinds(count: int) -> list[str]:
+                if count <= 0:
+                    return []
+                if count == 1:
+                    return ["start"]
+                if count == 2:
+                    return ["start", "last"]
+                return ["start"] + ["middle"] * (count - 2) + ["last"]
+
+            resolved_kinds = [_normalize_kind(k) for k in anchor_kinds] if anchor_kinds else _default_kinds(len(anchor_frames))
+            if len(resolved_kinds) != len(anchor_frames):
+                raise ValueError("anchor_kinds length must match anchor_frames length")
+
+            label_key_map = {
+                "start": PromptPhraseKey.ANCHOR_SCENE_LABEL_START.value,
+                "middle": PromptPhraseKey.ANCHOR_SCENE_LABEL_MIDDLE.value,
+                "last": PromptPhraseKey.ANCHOR_SCENE_LABEL_LAST.value,
+            }
+            completion_key_map = {
+                "start": PromptPhraseKey.ANCHOR_SCENE_COMPLETION_START.value,
+                "middle": PromptPhraseKey.ANCHOR_SCENE_COMPLETION_MIDDLE.value,
+                "last": PromptPhraseKey.ANCHOR_SCENE_COMPLETION_LAST.value,
+            }
+
+            for idx, (anchor, kind) in enumerate(zip(anchor_frames, resolved_kinds, strict=False), start=1):
+                label_template = phrases[label_key_map[kind]]
+                completion_template = phrases[completion_key_map[kind]]
+                label = label_template.format(i=idx) if "{i}" in label_template else label_template
+                completion = completion_template.format(i=idx) if "{i}" in completion_template else completion_template
+                yield TextEvent(label)
+                yield ImageEvent(anchor)
+                yield TextEvent(completion)
         else:
-            logger.debug("Missing starting_frame; skipping initial scene anchor.")
+            logger.debug("Missing anchor_frames; skipping initial scene anchor(s).")
 
         # Context frames (with known completion)
         counter = 1
@@ -253,7 +309,8 @@ class BaseModelClient(ABC):
         return self._generate_from_parts(
             prompt,
             instruction=eval_episode.instruction,
-            starting_frame=eval_episode.starting_frame,
+            anchor_frames=eval_episode.anchor_frames,
+            anchor_kinds=eval_episode.anchor_kinds,
             eval_frames=eval_episode.shuffled_frames,
             context_episodes=context_episodes,
             temperature=temperature,
@@ -272,7 +329,8 @@ class BaseModelClient(ABC):
         return self._generate_from_parts(
             prompt,
             instruction=eval_frame.instruction,
-            starting_frame=eval_frame.starting_frame,
+            anchor_frames=eval_frame.anchor_frames,
+            anchor_kinds=eval_frame.anchor_kinds,
             eval_frames=[eval_frame.frame],
             context_episodes=context_episodes,
             temperature=temperature,
@@ -284,7 +342,8 @@ class BaseModelClient(ABC):
         prompt: str,
         *,
         instruction: str,
-        starting_frame: ImageT | None,
+        anchor_frames: Sequence[ImageT] | None,
+        anchor_kinds: Sequence[str] | None,
         eval_frames: Sequence[ImageT],
         context_episodes: ContextEpisodes,
         temperature: float,
@@ -294,13 +353,80 @@ class BaseModelClient(ABC):
             self._iter_prompt_events(
                 prompt,
                 instruction=instruction,
-                starting_frame=starting_frame,
+                anchor_frames=anchor_frames,
+                anchor_kinds=anchor_kinds,
                 eval_frames=eval_frames,
                 context_episodes=context_episodes,
                 prompt_phrases=prompt_phrases,
             )
         )
-        return self._generate_from_events(events, temperature)
+        log_path = self._start_conversation_log(events)
+        try:
+            response_text = self._generate_from_events(events, temperature)
+        except Exception as exc:
+            self._finish_conversation_log(log_path, error=exc)
+            raise
+        self._finish_conversation_log(log_path, response_text=response_text)
+        return response_text
+
+    def _start_conversation_log(self, events: list[Event]) -> Path | None:
+        if self._conversation_log_dir is None:
+            return None
+        try:
+            self._conversation_log_counter += 1
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            model_name = getattr(self, "model_name", "model")
+            model_safe = str(model_name).replace("/", "_")
+            session_dir = self._conversation_log_dir / model_safe / f"{timestamp}_{self._conversation_log_counter:04d}"
+            session_dir.mkdir(parents=True, exist_ok=True)
+            log_path = session_dir / "conversation_history.txt"
+            self._last_conversation_log_path = log_path
+            os.environ["GVL_CONVERSATION_LOG_PATH"] = str(log_path)
+
+            lines: list[str] = [
+                f"model: {model_name}",
+                f"timestamp: {timestamp}",
+                "",
+                "[PROMPT]",
+                "",
+            ]
+            image_index = 0
+            for idx, ev in enumerate(events, start=1):
+                if isinstance(ev, TextEvent):
+                    lines.append(f"[TEXT {idx:03d}]")
+                    lines.append(ev.text)
+                elif isinstance(ev, ImageEvent):
+                    image_index += 1
+                    image_name = f"image_{image_index:03d}.png"
+                    image_path = session_dir / image_name
+                    try:
+                        to_pil(ev.image).save(image_path)
+                        lines.append(f"[IMAGE {idx:03d}] {image_name}")
+                    except Exception as exc:
+                        lines.append(f"[IMAGE {idx:03d}] <save failed: {exc}>")
+                else:
+                    lines.append(f"[EVENT {idx:03d}] <unknown>")
+                lines.append("")
+            lines.append("[RESPONSE]")
+            lines.append("")
+            log_path.write_text("\n".join(lines), encoding="utf-8")
+            return log_path
+        except Exception as exc:
+            logger.warning(f"Conversation logging failed: {exc}")
+            return None
+
+    def _finish_conversation_log(self, log_path: Path | None, *, response_text: str | None = None, error: Exception | None = None) -> None:
+        if log_path is None:
+            return
+        try:
+            with log_path.open("a", encoding="utf-8") as f:
+                if error is not None:
+                    f.write(f"<error: {error}>")
+                elif response_text is not None:
+                    f.write(response_text)
+                f.write("\n")
+        except Exception as exc:
+            logger.warning(f"Conversation logging failed: {exc}")
 
     @abstractmethod
     def _generate_from_events(self, events: list[Event], temperature: float) -> str:  # pragma: no cover - interface only

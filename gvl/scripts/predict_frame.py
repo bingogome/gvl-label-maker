@@ -1,6 +1,7 @@
 """Single-frame prediction script (FrameEvalCase)."""
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -19,16 +20,43 @@ from gvl.utils.data_types import EvalFrame, FrameEvalCase
 from gvl.utils.frame import save_frame_with_progress
 
 
-def _select_starting_frame(frames, anchoring: str):
+def _normalize_anchoring(anchoring: str | list[str] | None) -> list[str]:
+    if anchoring is None:
+        return []
+    if isinstance(anchoring, str):
+        if "," in anchoring:
+            return [part.strip() for part in anchoring.split(",") if part.strip()]
+        return [anchoring]
+    return [str(anchor) for anchor in anchoring]
+
+
+def _select_anchor_frames(frames, anchoring: str | list[str] | None):
     if not frames:
-        return None
-    if anchoring == "first":
-        return frames[0]
-    if anchoring == "last":
-        return frames[-1]
-    if anchoring == "middle":
-        return frames[len(frames) // 2]
-    raise ValueError(f"Unknown anchoring method: {anchoring}")
+        return [], []
+    anchors: list = []
+    anchor_kinds: list[str] = []
+    choices = _normalize_anchoring(anchoring)
+    if not choices:
+        return anchors, anchor_kinds
+    seen = set()
+    for choice in choices:
+        if choice == "first":
+            anchor_idx = 0
+            anchor_kind = "start"
+        elif choice == "last":
+            anchor_idx = len(frames) - 1
+            anchor_kind = "last"
+        elif choice == "middle":
+            anchor_idx = len(frames) // 2
+            anchor_kind = "middle"
+        else:
+            raise ValueError(f"Unknown anchoring method: {choice}")
+        if anchor_idx in seen:
+            continue
+        anchors.append(frames[anchor_idx])
+        anchor_kinds.append(anchor_kind)
+        seen.add(anchor_idx)
+    return anchors, anchor_kinds
 
 
 def _compute_task_completion_rate(frame_index: int, total_frames: int) -> int | None:
@@ -45,6 +73,10 @@ def main(config: DictConfig) -> None:
     load_dotenv(override=True)
     logger.info("Environment variables loaded (dotenv)")
     logger.info(f"Configuration:\n{OmegaConf.to_yaml(config)}")
+
+    prompt_log_dir = config.get("prompt_log_dir", None)
+    if prompt_log_dir:
+        os.environ["GVL_CONVERSATION_LOG_DIR"] = str(prompt_log_dir)
 
     data_loader: BaseDataLoader = instantiate(config.data_loader)
     client: BaseModelClient = instantiate(config.model)
@@ -69,7 +101,7 @@ def main(config: DictConfig) -> None:
     if frame_index < 0 or frame_index >= len(raw_frames):
         raise IndexError(f"frame_index {frame_index} out of bounds for episode length {len(raw_frames)}")
     eval_frame_img = raw_frames[frame_index]
-    starting_frame = _select_starting_frame(raw_frames, str(config.anchoring))
+    anchor_frames, anchor_kinds = _select_anchor_frames(raw_frames, config.anchoring)
     task_completion_rate = _compute_task_completion_rate(frame_index, len(raw_frames))
     if task_completion_rate is None:
         logger.warning(f"Ground truth completion rate not found for frame_index={frame_index}")
@@ -77,7 +109,8 @@ def main(config: DictConfig) -> None:
     eval_frame = EvalFrame(
         instruction=instruction,
         frame=eval_frame_img,
-        starting_frame=starting_frame,
+        anchor_frames=anchor_frames,
+        anchor_kinds=anchor_kinds,
         task_completion_rate=task_completion_rate,
     )
     frame_eval_case = FrameEvalCase(eval_frame=eval_frame, context_episodes=context_episodes)

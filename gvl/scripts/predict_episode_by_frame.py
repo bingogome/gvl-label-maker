@@ -1,6 +1,7 @@
 """Episode prediction by per-frame inference (FrameEvalCase)."""
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -46,6 +47,10 @@ def main(config: DictConfig) -> None:
     logger.info("Environment variables loaded (dotenv)")
     logger.info(f"Configuration:\n{OmegaConf.to_yaml(config)}")
 
+    prompt_log_dir = config.get("prompt_log_dir", None)
+    if prompt_log_dir:
+        os.environ["GVL_CONVERSATION_LOG_DIR"] = str(prompt_log_dir)
+
     data_loader: BaseDataLoader = instantiate(config.data_loader)
     client: BaseModelClient = instantiate(config.model)
     mapper: BaseMapper = instantiate(config.mapper)
@@ -80,34 +85,41 @@ def main(config: DictConfig) -> None:
     frame_records = []
     predicted_values: list[int | None] = []
 
+    frame_jsonl_path = output_dir / f"{model_name_safe}_{starting_time}_episode_{episode_index}_frame_predictions.jsonl"
+    logger.info(f"Streaming per-frame predictions to {frame_jsonl_path}")
+
     total_frames = len(eval_episode.shuffled_frames)
-    for idx, (frame, gt_rate) in tqdm(
-        enumerate(zip(eval_episode.shuffled_frames, eval_episode.shuffled_frames_approx_completion_rates, strict=False)),
-        total=total_frames,
-        desc="Predicting frames",
-    ):
-        eval_frame = EvalFrame(
-            instruction=eval_episode.instruction,
-            frame=frame,
-            starting_frame=eval_episode.starting_frame,
-            task_completion_rate=gt_rate,
-        )
-        frame_eval_case = FrameEvalCase(eval_frame=eval_frame, context_episodes=eval_case.context_episodes)
-        record = infer_utils.predict_on_frame_eval_case(
-            idx=idx,
+    with frame_jsonl_path.open("w", encoding="utf-8") as f:
+        for idx, (frame, gt_rate) in tqdm(
+            enumerate(zip(eval_episode.shuffled_frames, eval_episode.shuffled_frames_approx_completion_rates, strict=False)),
             total=total_frames,
-            eval_case=frame_eval_case,
-            client=client,
-            prompt_template=prompt_template,
-            save_raw=save_raw,
-            frame_metric=frame_metric,
-            dataset_name=dataset_name,
-            temperature=float(config.prediction.get("temperature", 1.0)),
-            mapper=mapper,
-            prompt_phrases=prompt_phrases,
-        )
-        frame_records.append(record)
-        predicted_values.append(record.predicted_percentage)
+            desc="Predicting frames",
+        ):
+            eval_frame = EvalFrame(
+                instruction=eval_episode.instruction,
+                frame=frame,
+                anchor_frames=eval_episode.anchor_frames,
+                anchor_kinds=eval_episode.anchor_kinds,
+                task_completion_rate=gt_rate,
+            )
+            frame_eval_case = FrameEvalCase(eval_frame=eval_frame, context_episodes=eval_case.context_episodes)
+            record = infer_utils.predict_on_frame_eval_case(
+                idx=idx,
+                total=total_frames,
+                eval_case=frame_eval_case,
+                client=client,
+                prompt_template=prompt_template,
+                save_raw=save_raw,
+                frame_metric=frame_metric,
+                dataset_name=dataset_name,
+                temperature=float(config.prediction.get("temperature", 1.0)),
+                mapper=mapper,
+                prompt_phrases=prompt_phrases,
+            )
+            frame_records.append(record)
+            predicted_values.append(record.predicted_percentage)
+            f.write(json.dumps(record.to_dict(include_images=False), ensure_ascii=False) + "\n")
+            f.flush()
 
     missing_predictions = sum(value is None for value in predicted_values)
     if missing_predictions:
@@ -142,10 +154,6 @@ def main(config: DictConfig) -> None:
         error_count=error_count_total,
     )
 
-    frame_jsonl_path = output_dir / f"{model_name_safe}_{starting_time}_episode_{episode_index}_frame_predictions.jsonl"
-    with frame_jsonl_path.open("w", encoding="utf-8") as f:
-        for record in frame_records:
-            f.write(json.dumps(record.to_dict(include_images=False), ensure_ascii=False) + "\n")
     logger.info(f"Wrote per-frame predictions to {frame_jsonl_path}")
 
     episode_json_path = output_dir / f"{model_name_safe}_{starting_time}_episode_{episode_index}_prediction.json"

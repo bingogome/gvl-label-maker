@@ -8,19 +8,24 @@ defaults:
   - mapping_prompts: default
   - _self_
 
-seed: 42          # Global seed (propagated to loader & any RNG-dependent logic)
-shuffle: true       # Whether to shuffle frame presentation order
-sampling_method: heavy_right_tail
+seed: 42  # Global seed (propagated to loader & any RNG-dependent logic)
+shuffle: true  # Whether to shuffle frame presentation order
+sampling_method: heavy_right_tail  # Frame sampling method for CPU benchmark
+anchoring: [first, middle, last]  # Anchor choices: first, middle, last (list preserves order)
+prompt_log_dir: ${prediction.output_dir}/conversation_history  # Set to null to disable conversation logging
 
 
 dataset:
   num_context_episodes: 0  # How many in-context episodes to provide
 
 prediction:
-  num_eval_cases: 50   # How many few-shot eval cases to evaluate
-  save_raw: true    # Whether to dump raw model outputs
-  output_dir: ${hydra:run.dir}
+  num_eval_cases: 50  # How many few-shot eval cases to evaluate
+  save_raw: true  # Whether to dump raw model outputs
+  save_images: true  # Save labeled frames per eval case
+  save_videos: true  # Save ground-truth + prediction videos
+  output_dir: ${hydra:run.dir}  # Run output directory
   temperature: 1.0  # Sampling temperature for generation
+  video_fps: 2  # FPS for generated videos
 
 mapper:
   max_new_tokens: 1024

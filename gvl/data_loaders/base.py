@@ -113,14 +113,56 @@ class BaseDataLoader(ABC):
             np_frames.append(to_numpy(f))
         return np_frames
 
+    def _normalize_anchoring(self, anchoring: str | Sequence[str] | None) -> list[str]:
+        if anchoring is None:
+            return []
+        if isinstance(anchoring, str):
+            if "," in anchoring:
+                return [part.strip() for part in anchoring.split(",") if part.strip()]
+            return [anchoring]
+        return [str(anchor) for anchor in anchoring]
+
+    def _select_anchor_frames(
+        self,
+        frames_np: Sequence[ImageNumpy],
+        original_indices: Sequence[int],
+        anchoring: str | Sequence[str] | None,
+    ) -> tuple[list[ImageNumpy], list[str]]:
+        anchors: list[ImageNumpy] = []
+        anchor_kinds: list[str] = []
+        if not original_indices:
+            return anchors, anchor_kinds
+        choices = self._normalize_anchoring(anchoring)
+        if not choices:
+            return anchors, anchor_kinds
+        seen: set[int] = set()
+        for choice in choices:
+            if choice == "first":
+                anchor_idx = original_indices[0]
+                anchor_kind = "start"
+            elif choice == "last":
+                anchor_idx = original_indices[-1]
+                anchor_kind = "last"
+            elif choice == "middle":
+                anchor_idx = original_indices[len(original_indices) // 2]
+                anchor_kind = "middle"
+            else:
+                raise ValueError(f"Unknown anchoring method: {choice}")
+            if anchor_idx in seen:
+                continue
+            anchors.append(frames_np[anchor_idx])
+            anchor_kinds.append(anchor_kind)
+            seen.add(anchor_idx)
+        return anchors, anchor_kinds
+
     def _build_episode(
         self,
         *,
         frames: Sequence[ImageT],
         instruction: str,
         episode_index: int,
-        sampling_method: str = 'random',
-        anchoring: str = 'first',
+        sampling_method: str = "random",
+        anchoring: str | Sequence[str] | None = "first",
     ) -> Episode:
         """Construct an Episode from raw frames.
 
@@ -152,19 +194,12 @@ class BaseDataLoader(ABC):
             original_completion[original_indices.index(i)] for i in shuffled_indices
         ]
 
-        if anchoring == 'first':
-            starting_frame = frames_np[original_indices[0]]
-        elif anchoring == 'last':
-            starting_frame = frames_np[original_indices[-1]]
-        elif anchoring == 'middle':
-            mid_idx = original_indices[len(original_indices) // 2]
-            starting_frame = frames_np[mid_idx]
-        else:
-            raise ValueError(f"Unknown anchoring method: {anchoring}")
+        anchor_frames, anchor_kinds = self._select_anchor_frames(frames_np, original_indices, anchoring)
 
         return Episode(
             instruction=str(instruction),
-            starting_frame=starting_frame,
+            anchor_frames=anchor_frames,
+            anchor_kinds=anchor_kinds,
             episode_index=int(episode_index),
             original_frames_indices=original_indices,
             shuffled_frames_indices=shuffled_indices,

@@ -8,6 +8,7 @@ Steps:
 """
 
 import json
+import os
 from pathlib import Path
 
 import hydra
@@ -35,6 +36,10 @@ def main(config: DictConfig) -> None:
     logger.info("Environment variables loaded (dotenv)")
     logger.info(f"Configuration:\n{OmegaConf.to_yaml(config)}")
 
+    prompt_log_dir = config.get("prompt_log_dir", None)
+    if prompt_log_dir:
+        os.environ["GVL_CONVERSATION_LOG_DIR"] = str(prompt_log_dir)
+
     data_loader: BaseDataLoader = instantiate(config.data_loader)
     client: BaseModelClient = instantiate(config.model)
     mapper: BaseMapper = instantiate(config.mapper)
@@ -53,7 +58,7 @@ def main(config: DictConfig) -> None:
     starting_time = datetime.now().isoformat().replace(':', '-')
     jsonl_path = output_dir / f"{model_name_safe}_{starting_time}_predictions.jsonl"
     sampling_method = config.sampling_method
-    anchoring = config.anchoring
+    anchoring = OmegaConf.to_container(config.anchoring, resolve=True)
 
     eval_cases = infer_utils.load_episode_eval_cases(data_loader, num_eval_cases, config.dataset.name)
     logger.info(
@@ -68,82 +73,86 @@ def main(config: DictConfig) -> None:
     # Load prompt phrasing from dedicated config section (required; fall back to empty)
     prompt_phrases = dict(config.get("prompt_phrases", {})) if hasattr(config, "prompt_phrases") else {}
     logger.debug(f"Prompt phrases: {prompt_phrases}")
-    records = [
-        infer_utils.predict_on_episode_eval_case(
-            idx,
-            num_eval_cases,
-            eval_case,
-            client,
-            prompt_template,
-            save_raw,
-            voc_metric,
-            config.dataset.name,
-            temperature=float(config.prediction.get("temperature", 1.0)),
-            mapper=mapper,
-            prompt_phrases=prompt_phrases,
-        )
-        for idx, eval_case in tqdm(enumerate(eval_cases), total=num_eval_cases, desc="Predicting")
-    ]
-
     save_images = bool(config.prediction.get("save_images", True))
     save_videos = bool(config.prediction.get("save_videos", True))
     frames_dir = None
     if save_images or save_videos:
         frames_dir = output_dir / f"{model_name_safe}_{starting_time}_frames"
         frames_dir.mkdir(parents=True, exist_ok=True)
-    if save_images and frames_dir is not None:
-        logger.info(f"Saving labeled frames to {frames_dir}")
-        save_frame_visualizations(records, frames_dir)
-    if save_videos and frames_dir is not None:
-        video_fps = int(config.prediction.get("video_fps", 2))
-        for record in records:
-            eval_ep = record.example.eval_episode
-            eval_case_dir = frames_dir / f"eval_case_{record.index:04d}"
-            eval_case_dir.mkdir(parents=True, exist_ok=True)
-            video_path = eval_case_dir / f"eval_episode_{eval_ep.episode_index}_gt_original.mp4"
-            video_frames, video_values = order_episode_frames(
-                eval_ep,
-                eval_ep.shuffled_frames_approx_completion_rates,
-                order="original",
-            )
-            logger.info(f"Saving ground-truth video in 'original' order at {video_path}")
-            try:
-                save_progress_video(
-                    video_frames,
-                    video_values,
-                    video_path,
-                    label_prefix="gt",
-                    fps=video_fps,
-                )
-            except Exception as exc:
-                logger.exception(f"Failed to save ground-truth video at {video_path}: {exc}")
-                logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
-            else:
-                logger.info(f"Wrote ground-truth video to {video_path}")
-            pred_video_path = eval_case_dir / f"eval_episode_{eval_ep.episode_index}_pred_original.mp4"
-            pred_frames, pred_values = order_episode_frames(
-                eval_ep,
-                eval_ep.shuffled_frames_predicted_completion_rates,
-                order="original",
-            )
-            logger.info(f"Saving prediction video in 'original' order at {pred_video_path}")
-            try:
-                save_progress_video(
-                    pred_frames,
-                    pred_values,
-                    pred_video_path,
-                    label_prefix="pred",
-                    fps=video_fps,
-                )
-            except Exception as exc:
-                logger.exception(f"Failed to save prediction video at {pred_video_path}: {exc}")
-                logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
-            else:
-                logger.info(f"Wrote prediction video to {pred_video_path}")
+        if save_images:
+            logger.info(f"Saving labeled frames to {frames_dir}")
+        if save_videos:
+            logger.info(f"Saving videos to {frames_dir}")
+    video_fps = int(config.prediction.get("video_fps", 2))
 
-    logger.info(f"Serializing {len(records)} prediction records to {jsonl_path}")
-    jsonl_payload_iter = (r.to_dict(include_images=False) for r in records)
-    infer_utils.save_jsonl(jsonl_payload_iter, jsonl_path)
+    records: list = []
+    logger.info(f"Streaming prediction records to {jsonl_path}")
+    with jsonl_path.open("w", encoding="utf-8") as jsonl_file:
+        for idx, eval_case in tqdm(enumerate(eval_cases), total=num_eval_cases, desc="Predicting"):
+            record = infer_utils.predict_on_episode_eval_case(
+                idx,
+                num_eval_cases,
+                eval_case,
+                client,
+                prompt_template,
+                save_raw,
+                voc_metric,
+                config.dataset.name,
+                temperature=float(config.prediction.get("temperature", 1.0)),
+                mapper=mapper,
+                prompt_phrases=prompt_phrases,
+            )
+            records.append(record)
+            jsonl_file.write(json.dumps(record.to_dict(include_images=False), ensure_ascii=False) + "\n")
+            jsonl_file.flush()
+
+            if save_images and frames_dir is not None:
+                save_frame_visualizations([record], frames_dir)
+
+            if save_videos and frames_dir is not None:
+                eval_ep = record.example.eval_episode
+                eval_case_dir = frames_dir / f"eval_case_{record.index:04d}"
+                eval_case_dir.mkdir(parents=True, exist_ok=True)
+                video_path = eval_case_dir / f"eval_episode_{eval_ep.episode_index}_gt_original.mp4"
+                video_frames, video_values = order_episode_frames(
+                    eval_ep,
+                    eval_ep.shuffled_frames_approx_completion_rates,
+                    order="original",
+                )
+                logger.info(f"Saving ground-truth video in 'original' order at {video_path}")
+                try:
+                    save_progress_video(
+                        video_frames,
+                        video_values,
+                        video_path,
+                        label_prefix="gt",
+                        fps=video_fps,
+                    )
+                except Exception as exc:
+                    logger.exception(f"Failed to save ground-truth video at {video_path}: {exc}")
+                    logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
+                else:
+                    logger.info(f"Wrote ground-truth video to {video_path}")
+                pred_video_path = eval_case_dir / f"eval_episode_{eval_ep.episode_index}_pred_original.mp4"
+                pred_frames, pred_values = order_episode_frames(
+                    eval_ep,
+                    eval_ep.shuffled_frames_predicted_completion_rates,
+                    order="original",
+                )
+                logger.info(f"Saving prediction video in 'original' order at {pred_video_path}")
+                try:
+                    save_progress_video(
+                        pred_frames,
+                        pred_values,
+                        pred_video_path,
+                        label_prefix="pred",
+                        fps=video_fps,
+                    )
+                except Exception as exc:
+                    logger.exception(f"Failed to save prediction video at {pred_video_path}: {exc}")
+                    logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
+                else:
+                    logger.info(f"Wrote prediction video to {pred_video_path}")
     dataset_metrics = aggregate_metrics(records)
     logger.success(
         f"Aggregate metrics: total={dataset_metrics.total_examples} valid={dataset_metrics.valid_predictions} "

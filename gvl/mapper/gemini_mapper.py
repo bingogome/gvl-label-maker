@@ -1,9 +1,14 @@
-from gvl.mapper.base import BaseMapper
-from google import genai
-from google.genai import types
+from datetime import datetime
 import json
 import os
+from pathlib import Path
 import time
+
+from google import genai
+from google.genai import types
+from loguru import logger
+
+from gvl.mapper.base import BaseMapper
 from gvl.utils.errors import PercentagesNormalizationError
 
 
@@ -17,7 +22,72 @@ class GeminiMapper(BaseMapper):
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         self.retries = retries
         self.mapping_prompt = mapping_prompt.template
+        log_dir = os.getenv("GVL_CONVERSATION_LOG_DIR")
+        self._conversation_log_dir = Path(log_dir) if log_dir else None
+        self._conversation_log_counter = 0
 
+    def _log_mapping_conversation(
+        self,
+        model_response: str,
+        response_text: str | None = None,
+        *,
+        error: Exception | None = None,
+        attempt: int | None = None,
+    ) -> None:
+        log_path_env = os.getenv("GVL_CONVERSATION_LOG_PATH")
+        if log_path_env:
+            try:
+                log_path = Path(log_path_env)
+                with log_path.open("a", encoding="utf-8") as f:
+                    f.write("\n[MAPPER]\n")
+                    f.write(f"mapper_model: {self.model_name}\n")
+                    f.write(f"attempt: {attempt if attempt is not None else 1}\n")
+                    f.write(f"temperature: {self.temperature}\n")
+                    f.write(f"max_new_tokens: {self.max_new_tokens}\n\n")
+                    f.write("[MAPPING_PROMPT]\n")
+                    f.write(self.mapping_prompt + "\n\n")
+                    f.write("[MODEL_RESPONSE]\n")
+                    f.write(model_response + "\n\n")
+                    f.write("[MAPPER_RESPONSE]\n")
+                    if error is not None:
+                        f.write(f"<error: {error}>\n")
+                    elif response_text is not None:
+                        f.write(response_text + "\n")
+                return
+            except Exception as exc:
+                logger.warning(f"Mapper conversation logging failed: {exc}")
+        if self._conversation_log_dir is None:
+            return
+        try:
+            self._conversation_log_counter += 1
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            model_safe = str(self.model_name).replace("/", "_")
+            session_dir = self._conversation_log_dir / "mapper" / model_safe / f"{timestamp}_{self._conversation_log_counter:04d}"
+            session_dir.mkdir(parents=True, exist_ok=True)
+            log_path = session_dir / "conversation_history.txt"
+
+            lines: list[str] = [
+                f"mapper_model: {self.model_name}",
+                f"timestamp: {timestamp}",
+                f"attempt: {attempt}" if attempt is not None else "attempt: 1",
+                f"temperature: {self.temperature}",
+                f"max_new_tokens: {self.max_new_tokens}",
+                "",
+                "[MAPPING_PROMPT]",
+                self.mapping_prompt,
+                "",
+                "[MODEL_RESPONSE]",
+                model_response,
+                "",
+                "[MAPPER_RESPONSE]",
+            ]
+            if error is not None:
+                lines.append(f"<error: {error}>")
+            elif response_text is not None:
+                lines.append(response_text)
+            log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        except Exception as exc:
+            logger.warning(f"Mapper conversation logging failed: {exc}")
 
     def extract_percentages(self, model_response: str) -> list[float]:
         """
@@ -43,6 +113,7 @@ class GeminiMapper(BaseMapper):
                 )
 
                 response_content = response.text
+                self._log_mapping_conversation(model_response, response_content, attempt=attempt + 1)
     
                 if "```json\n" in response_content:
                     response_content = response_content.split("```json\n")[1]
@@ -57,9 +128,9 @@ class GeminiMapper(BaseMapper):
 
             except Exception as e:
                 print(f"Error during API call: {e}")
+                self._log_mapping_conversation(model_response, error=e, attempt=attempt + 1)
                 if attempt < local_retries - 1:
                     print("Retrying...")
                     time.sleep(4)
                 else:
                     raise PercentagesNormalizationError
-

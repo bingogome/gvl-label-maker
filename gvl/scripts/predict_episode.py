@@ -1,6 +1,7 @@
 """Single-episode prediction script (EpisodeEvalCase)."""
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -24,6 +25,10 @@ def main(config: DictConfig) -> None:
     load_dotenv(override=True)
     logger.info("Environment variables loaded (dotenv)")
     logger.info(f"Configuration:\n{OmegaConf.to_yaml(config)}")
+
+    prompt_log_dir = config.get("prompt_log_dir", None)
+    if prompt_log_dir:
+        os.environ["GVL_CONVERSATION_LOG_DIR"] = str(prompt_log_dir)
 
     data_loader: BaseDataLoader = instantiate(config.data_loader)
     client: BaseModelClient = instantiate(config.model)
