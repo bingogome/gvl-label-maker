@@ -3,6 +3,7 @@
 import json
 import os
 from datetime import datetime
+import time
 from pathlib import Path
 
 import hydra
@@ -216,6 +217,8 @@ def main(config: DictConfig) -> None:
     )
 
     with frame_jsonl_path.open("w", encoding="utf-8") as f:
+        timing_path = output_dir / f"{model_name_safe}_{starting_time}_episode_{episode_index}_frame_timings.txt"
+        timing_file = timing_path.open("w", encoding="utf-8")
         for loop_idx, pos in tqdm(
             enumerate(selected_positions),
             total=len(selected_positions),
@@ -231,6 +234,7 @@ def main(config: DictConfig) -> None:
                 task_completion_rate=gt_rate,
             )
             frame_eval_case = FrameEvalCase(eval_frame=eval_frame, context_episodes=context_episodes)
+            t0 = time.time()
             record = infer_utils.predict_on_frame_eval_case(
                 idx=loop_idx,
                 total=len(selected_positions),
@@ -244,10 +248,14 @@ def main(config: DictConfig) -> None:
                 mapper=mapper,
                 prompt_phrases=prompt_phrases,
             )
+            duration = time.time() - t0
             frame_records.append(record)
             predicted_values[pos] = record.predicted_percentage
             f.write(json.dumps(record.to_dict(include_images=False), ensure_ascii=False) + "\n")
             f.flush()
+            timing_file.write(f"{loop_idx}\tframe_idx={pos}\tduration_sec={duration:.3f}\n")
+            timing_file.flush()
+        timing_file.close()
 
     missing_predictions = sum(value is None for value in predicted_values)
     if missing_predictions:
