@@ -18,6 +18,7 @@ from gvl.metrics.frame_error import FrameProgressErrorMetric
 from gvl.utils import inference as infer_utils
 from gvl.utils.data_types import EvalFrame, FrameEvalCase
 from gvl.utils.frame import save_frame_with_progress
+from gvl.utils.cleanup import cleanup_resources
 
 
 def _normalize_anchoring(anchoring: str | list[str] | None) -> list[str]:
@@ -145,6 +146,7 @@ def main(config: DictConfig) -> None:
         ground_truth=eval_frame.task_completion_rate,
     )
     logger.info(f"Wrote prediction image to {image_path}")
+    cleanup_resources()
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -26,6 +26,7 @@ from gvl.results.prediction import aggregate_metrics
 from gvl.utils import inference as infer_utils
 from gvl.utils.frame import order_episode_frames, save_frame_visualizations, save_progress_video
 from gvl.mapper.base import BaseMapper
+from gvl.utils.cleanup import cleanup_resources
 
 
 @hydra.main(version_base=None, config_path="../../configs", config_name="experiments/predict")
@@ -175,6 +176,7 @@ def main(config: DictConfig) -> None:
         json.dump(summary, f, indent=2)
     logger.info(f"Wrote {len(records)} records to {jsonl_path}")
     logger.info(f"Summary: {summary}")
+    cleanup_resources()
 
 
 if __name__ == "__main__":  # pragma: no cover

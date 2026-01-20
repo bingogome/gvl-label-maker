@@ -17,6 +17,7 @@ from gvl.mapper.base import BaseMapper
 from gvl.metrics.voc import VOCMetric
 from gvl.utils import inference as infer_utils
 from gvl.utils.frame import order_episode_frames, save_progress_video
+from gvl.utils.cleanup import cleanup_resources
 
 
 @hydra.main(version_base=None, config_path="../../configs", config_name="experiments/predict_episode")
@@ -90,6 +91,7 @@ def main(config: DictConfig) -> None:
         logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
     else:
         logger.info(f"Wrote prediction video to {video_path}")
+    cleanup_resources()
 
 
 if __name__ == "__main__":  # pragma: no cover

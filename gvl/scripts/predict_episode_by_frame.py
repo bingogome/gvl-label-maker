@@ -22,6 +22,7 @@ from gvl.metrics.voc import value_order_correlation
 from gvl.utils.data_types import ContextEpisodes, EvalFrame, FrameEvalCase
 from gvl.utils.frame import save_progress_video
 from gvl.utils.images import to_pil
+from gvl.utils.cleanup import cleanup_resources
 
 
 def _normalize_anchoring(anchoring: str | list[str] | None) -> list[str]:
@@ -328,6 +329,7 @@ def main(config: DictConfig) -> None:
         logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
     else:
         logger.info(f"Wrote prediction curve video to {curve_video_path}")
+    cleanup_resources()
 
 
 if __name__ == "__main__":  # pragma: no cover

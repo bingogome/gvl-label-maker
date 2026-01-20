@@ -16,10 +16,10 @@ class Qwen3Client(BaseModelClient):
         self.model_name = model_name
         self.max_input_length = max_input_length
     
-        if "qwen3" in model_name.lower() and "a3b" in model_name.lower():
+        if "qwen3" in model_name.lower() and ("a3b" in model_name.lower() or "a22b" in model_name.lower()):
             logger.info(f"Loading Qwen3 model {model_name} ...")
             self.model = Qwen3VLMoeForConditionalGeneration.from_pretrained(model_name, torch_dtype="auto", device_map="auto")
-        elif "qwen3" in model_name.lower() and "a3b" not in model_name.lower():
+        elif "qwen3" in model_name.lower() and ("a3b" not in model_name.lower() and "a22b" not in model_name.lower()):
             logger.info(f"Loading Qwen3 model {model_name} ...")
             self.model = Qwen3VLForConditionalGeneration.from_pretrained(model_name, torch_dtype="auto", device_map="auto")
         else:

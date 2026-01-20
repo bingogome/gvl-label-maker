@@ -22,7 +22,7 @@ class Qwen8BitClient(BaseModelClient):
             Int8WeightOnlyConfig(set_inductor_config=False)
         )
 
-        if "qwen3" in model_name.lower() and "a3b" in model_name.lower():
+        if "qwen3" in model_name.lower() and ("a3b" in model_name.lower() or "a22b" in model_name.lower()):
             logger.info(f"Loading Qwen3 model {model_name} ...")
             self.model = Qwen3VLMoeForConditionalGeneration.from_pretrained(
                 model_name,
@@ -30,7 +30,7 @@ class Qwen8BitClient(BaseModelClient):
                 device_map="auto",
                 quantization_config=quantization_config,
             )
-        elif "qwen3" in model_name.lower() and "a3b" not in model_name.lower():
+        elif "qwen3" in model_name.lower() and ("a3b" not in model_name.lower() and "a22b" not in model_name.lower()):
             logger.info(f"Loading Qwen3 model {model_name} ...")
             self.model = Qwen3VLForConditionalGeneration.from_pretrained(
                 model_name,
