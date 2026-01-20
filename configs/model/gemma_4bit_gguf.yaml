@@ -1,0 +1,11 @@
+_target_: gvl.clients.gguf.GGUFClient
+repo_id: google/gemma-3-27b-pt-qat-q4_0-gguf
+filename: gemma-3-27b-pt-q4_0.gguf
+model_path: ${oc.env:GVL_GGUF_MODEL_PATH,null}
+mmproj_path: ${oc.env:GVL_GGUF_MMPROJ_PATH,null}
+mmproj_repo_id: google/gemma-3-27b-pt-qat-q4_0-gguf
+mmproj_filename: mmproj-model-f16-27B.gguf
+chat_format: ${oc.env:GVL_GGUF_CHAT_FORMAT,llava-1-5}
+n_ctx: ${oc.env:GVL_GGUF_N_CTX,49152}
+n_gpu_layers: ${oc.env:GVL_GGUF_N_GPU_LAYERS,-1}
+n_threads: ${oc.env:GVL_GGUF_N_THREADS,null}

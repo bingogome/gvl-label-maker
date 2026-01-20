@@ -10,18 +10,65 @@ from dotenv import load_dotenv
 from hydra.utils import instantiate
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
+from PIL import ImageDraw
 from tqdm import tqdm
 
 from gvl.clients.base import BaseModelClient
 from gvl.data_loaders.base import BaseDataLoader
 from gvl.mapper.base import BaseMapper
-from gvl.metrics.base import MetricResult
 from gvl.metrics.frame_error import FrameProgressErrorMetric
-from gvl.metrics.voc import VOCMetric
-from gvl.results.prediction import EpisodePredictionRecord
 from gvl.utils import inference as infer_utils
-from gvl.utils.data_types import EvalFrame, FrameEvalCase
-from gvl.utils.frame import order_episode_frames, save_progress_video
+from gvl.metrics.voc import value_order_correlation
+from gvl.utils.data_types import ContextEpisodes, EvalFrame, FrameEvalCase
+from gvl.utils.frame import save_progress_video
+from gvl.utils.images import to_pil
+
+
+def _normalize_anchoring(anchoring: str | list[str] | None) -> list[str]:
+    if anchoring is None:
+        return []
+    if isinstance(anchoring, str):
+        if "," in anchoring:
+            return [part.strip() for part in anchoring.split(",") if part.strip()]
+        return [anchoring]
+    return [str(anchor) for anchor in anchoring]
+
+
+def _select_anchor_frames(frames, anchoring: str | list[str] | None):
+    if not frames:
+        return [], []
+    anchors: list = []
+    anchor_kinds: list[str] = []
+    choices = _normalize_anchoring(anchoring)
+    if not choices:
+        return anchors, anchor_kinds
+    seen = set()
+    for choice in choices:
+        if choice == "first":
+            anchor_idx = 0
+            anchor_kind = "start"
+        elif choice == "last":
+            anchor_idx = len(frames) - 1
+            anchor_kind = "last"
+        elif choice == "middle":
+            anchor_idx = len(frames) // 2
+            anchor_kind = "middle"
+        else:
+            raise ValueError(f"Unknown anchoring method: {choice}")
+        if anchor_idx in seen:
+            continue
+        anchors.append(frames[anchor_idx])
+        anchor_kinds.append(anchor_kind)
+        seen.add(anchor_idx)
+    return anchors, anchor_kinds
+
+
+def _compute_task_completion_rate(frame_index: int, total_frames: int) -> int | None:
+    if total_frames <= 0:
+        return None
+    if total_frames == 1:
+        return 100
+    return round(frame_index / (total_frames - 1) * 100)
 
 
 def _aggregate_error_counts(records) -> dict[str, int]:
@@ -32,12 +79,55 @@ def _aggregate_error_counts(records) -> dict[str, int]:
     return totals
 
 
-def _build_metrics_payload(metric_res: MetricResult) -> dict[str, object]:
-    payload: dict[str, object] = {metric_res.name: metric_res.value}
-    if metric_res.details:
-        for key, value in metric_res.details.items():
-            payload[f"{metric_res.name}_{key}"] = value
-    return payload
+def _save_progress_curve_video(
+    frames,
+    progress_values,
+    output_path: Path,
+    *,
+    fps: int = 2,
+    plot_width: int = 220,
+    plot_height: int = 80,
+) -> Path:
+    """Save a video with a small progress curve overlay on each frame."""
+    try:
+        import numpy as np
+        import imageio.v2 as imageio
+    except ImportError as exc:
+        raise RuntimeError("imageio is required to save MP4 files; install imageio and imageio-ffmpeg") from exc
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not frames:
+        raise ValueError("No frames provided for video output.")
+
+    with imageio.get_writer(output_path, fps=fps, codec="libx264") as writer:
+        for idx, frame in enumerate(frames):
+            pil = to_pil(frame).convert("RGB")
+            draw = ImageDraw.Draw(pil)
+            # Plot area in bottom-left
+            margin = 10
+            left = margin
+            bottom = pil.height - margin
+            top = bottom - plot_height
+            right = left + plot_width
+            # Semi-transparent grey background patch for the plot
+            patch = ImageDraw.ImageDraw(pil, "RGBA")
+            patch.rectangle([left, top, right, bottom], fill=(128, 128, 128, 180))
+            draw.rectangle([left, top, right, bottom], outline=(255, 255, 255))
+            # Build curve up to current frame using only available predictions
+            points = []
+            seen = [j for j, v in enumerate(progress_values[: idx + 1]) if v is not None]
+            if len(seen) >= 2:
+                denom = max(1, len(progress_values) - 1)
+                for j in seen:
+                    v = progress_values[j]
+                    x = left + int(plot_width * j / denom)
+                    v_clamped = max(0, min(100, int(v)))  # type: ignore[arg-type]
+                    y = bottom - int(plot_height * v_clamped / 100)
+                    points.append((x, y))
+                if len(points) > 1:
+                    draw.line(points, fill=(255, 255, 255), width=2)
+            writer.append_data(np.array(pil))
+    return output_path
 
 
 @hydra.main(version_base=None, config_path="../../configs", config_name="experiments/predict_episode_by_frame")
@@ -56,56 +146,93 @@ def main(config: DictConfig) -> None:
     mapper: BaseMapper = instantiate(config.mapper)
     prompt_template: str = config.prompts.template
 
-    episode_index = int(config.prediction.episode_index)
+    episode_index = int(config.prediction.get("episode_index", 0))
     save_raw = bool(config.prediction.save_raw)
     output_dir = Path(str(config.prediction.output_dir))
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    use_full_episode = bool(config.prediction.get("use_full_episode", False))
-    num_frames_override = config.prediction.get("num_frames", None)
-    if use_full_episode:
-        data_loader.num_frames = 1_000_000
-    elif num_frames_override is not None:
-        data_loader.num_frames = int(num_frames_override)
-    logger.info(
-        f"Episode sampling for episode_index={episode_index}: "
-        f"use_full_episode={use_full_episode} num_frames_override={num_frames_override}"
-    )
+    logger.info("predict_episode_by_frame uses the full episode; sampling is disabled for eval frames.")
 
     model_name_safe = client.model_name.replace("/", "_")
     starting_time = datetime.now().isoformat().replace(":", "-")
     dataset_name = config.dataset.name
 
-    eval_case = data_loader.load_fewshot_input(episode_index=episode_index)
-    eval_episode = eval_case.eval_episode
-    logger.info(f"Loaded eval case for episode_index={episode_index} from {dataset_name}")
+    frames, instruction = data_loader.load_episode_frames(episode_index=episode_index)
+    if not frames:
+        raise ValueError(f"No frames loaded for episode_index={episode_index}")
+    logger.info(f"Loaded {len(frames)} frames for episode_index={episode_index} from {dataset_name}")
+
+    anchor_source_index = int(config.prediction.get("anchor_episode_index", 0))
+    anchor_frames_source, _ = data_loader.load_episode_frames(episode_index=anchor_source_index)
+    if not anchor_frames_source:
+        raise ValueError(f"No frames loaded for anchor episode_index={anchor_source_index}")
+    anchor_frames, anchor_kinds = _select_anchor_frames(anchor_frames_source, config.anchoring)
+
+    context_indices = config.prediction.get("context_episode_indices", None)
+    if context_indices:
+        logger.info(f"Using explicit context_episode_indices={context_indices}")
+        contexts = []
+        original_num_frames = data_loader.num_frames
+        try:
+            for ctx_idx in context_indices:
+                ctx_frames, ctx_instruction = data_loader.load_episode_frames(episode_index=int(ctx_idx))
+                if not ctx_frames:
+                    logger.warning(f"No frames loaded for context episode_index={ctx_idx}; skipping")
+                    continue
+                contexts.append(
+                    data_loader._build_episode(
+                        frames=ctx_frames,
+                        instruction=ctx_instruction,
+                        episode_index=int(ctx_idx),
+                        sampling_method=getattr(data_loader, "sampling_method", "random"),
+                        anchoring=getattr(data_loader, "anchoring", "first"),
+                    )
+                )
+        finally:
+            data_loader.num_frames = original_num_frames
+        context_episodes = ContextEpisodes(contexts)
+    else:
+        context_episodes = ContextEpisodes([])
 
     prompt_phrases = dict(config.get("prompt_phrases", {})) if hasattr(config, "prompt_phrases") else {}
     frame_metric = FrameProgressErrorMetric()
     frame_records = []
-    predicted_values: list[int | None] = []
+    predicted_values: list[int | None] = [None] * len(frames)
 
     frame_jsonl_path = output_dir / f"{model_name_safe}_{starting_time}_episode_{episode_index}_frame_predictions.jsonl"
     logger.info(f"Streaming per-frame predictions to {frame_jsonl_path}")
 
-    total_frames = len(eval_episode.shuffled_frames)
+    frame_stride = int(config.prediction.get("frame_stride", 0))
+    if frame_stride < 0:
+        raise ValueError("prediction.frame_stride must be >= 0")
+
+    total_frames = len(frames)
+    frame_step = frame_stride + 1
+    selected_positions = list(range(0, total_frames, frame_step))
+    logger.info(
+        f"Predicting {len(selected_positions)}/{total_frames} frames in original order "
+        f"with frame_stride={frame_stride}"
+    )
+
     with frame_jsonl_path.open("w", encoding="utf-8") as f:
-        for idx, (frame, gt_rate) in tqdm(
-            enumerate(zip(eval_episode.shuffled_frames, eval_episode.shuffled_frames_approx_completion_rates, strict=False)),
-            total=total_frames,
+        for loop_idx, pos in tqdm(
+            enumerate(selected_positions),
+            total=len(selected_positions),
             desc="Predicting frames",
         ):
+            frame = frames[pos]
+            gt_rate = _compute_task_completion_rate(pos, total_frames)
             eval_frame = EvalFrame(
-                instruction=eval_episode.instruction,
+                instruction=instruction,
                 frame=frame,
-                anchor_frames=eval_episode.anchor_frames,
-                anchor_kinds=eval_episode.anchor_kinds,
+                anchor_frames=anchor_frames,
+                anchor_kinds=anchor_kinds,
                 task_completion_rate=gt_rate,
             )
-            frame_eval_case = FrameEvalCase(eval_frame=eval_frame, context_episodes=eval_case.context_episodes)
+            frame_eval_case = FrameEvalCase(eval_frame=eval_frame, context_episodes=context_episodes)
             record = infer_utils.predict_on_frame_eval_case(
-                idx=idx,
-                total=total_frames,
+                idx=loop_idx,
+                total=len(selected_positions),
                 eval_case=frame_eval_case,
                 client=client,
                 prompt_template=prompt_template,
@@ -117,63 +244,66 @@ def main(config: DictConfig) -> None:
                 prompt_phrases=prompt_phrases,
             )
             frame_records.append(record)
-            predicted_values.append(record.predicted_percentage)
+            predicted_values[pos] = record.predicted_percentage
             f.write(json.dumps(record.to_dict(include_images=False), ensure_ascii=False) + "\n")
             f.flush()
 
     missing_predictions = sum(value is None for value in predicted_values)
     if missing_predictions:
-        logger.warning(f"{missing_predictions} frame predictions missing; filling with 0 for episode summary.")
-
-    predicted_values_int = [value if value is not None else 0 for value in predicted_values]
-    inferred_episode = infer_utils.build_inferred_episode_eval_case(eval_case, predicted_values_int)
+        logger.warning(f"{missing_predictions} frame predictions missing; leaving as None.")
 
     error_count_total = _aggregate_error_counts(frame_records)
     if missing_predictions:
         error_count_total["MissingPrediction"] = missing_predictions
 
-    voc_metric = VOCMetric()
-    if sum(error_count_total.values()) > 0:
-        metric_res = MetricResult(
-            name=voc_metric.name,
-            value=0.0,
-            details={"note": f"errors in prediction prevented metric computation {error_count_total!s}"},
-        )
+    # VOC on predicted frames only
+    available_idx = [i for i, v in enumerate(predicted_values) if v is not None]
+    if sum(error_count_total.values()) > 0 or len(available_idx) < 2:
+        metrics_payload = {
+            "voc": 0.0,
+            "voc_note": "errors in prediction prevented metric computation" if sum(error_count_total.values()) > 0 else "insufficient predictions",
+        }
     else:
-        metric_res = voc_metric.compute(inferred_episode)
-    metrics_payload = _build_metrics_payload(metric_res)
+        preds = [predicted_values[i] for i in available_idx]  # type: ignore[index]
+        truth = available_idx
+        voc_value = value_order_correlation(preds, truth)
+        if voc_value != voc_value:  # NaN
+            metrics_payload = {"voc": 0.0, "voc_note": "undefined correlation"}
+        else:
+            metrics_payload = {"voc": float(voc_value)}
 
-    episode_record = EpisodePredictionRecord(
-        index=0,
-        dataset=dataset_name,
-        example=inferred_episode,
-        predicted_percentages=predicted_values_int,
-        valid_length=len(predicted_values_int) == len(eval_episode.shuffled_frames),
-        metrics=metrics_payload,
-        raw_response=None,
-        error_count=error_count_total,
-    )
+    episode_record = {
+        "index": 0,
+        "dataset": dataset_name,
+        "episode_index": episode_index,
+        "predicted_percentages": predicted_values,
+        "valid_length": missing_predictions == 0,
+        "metrics": metrics_payload,
+        "error_count": error_count_total,
+    }
 
     logger.info(f"Wrote per-frame predictions to {frame_jsonl_path}")
 
     episode_json_path = output_dir / f"{model_name_safe}_{starting_time}_episode_{episode_index}_prediction.json"
     with episode_json_path.open("w", encoding="utf-8") as f:
-        json.dump(episode_record.to_dict(include_images=False), f, indent=2)
+        json.dump(episode_record, f, indent=2)
     logger.info(f"Wrote episode prediction summary to {episode_json_path}")
 
     video_fps = int(config.prediction.get("video_fps", 2))
-    video_order = str(config.prediction.get("video_order", "shuffled")).lower()
+    # Carry forward last known prediction for annotation only
+    display_values = []
+    last_pred = None
+    for v in predicted_values:
+        if v is not None:
+            last_pred = v
+        display_values.append(last_pred)
+
     video_path = output_dir / f"{model_name_safe}_{starting_time}_episode_{episode_index}_pred.mp4"
-    video_frames, video_values = order_episode_frames(
-        eval_episode,
-        predicted_values,
-        order=video_order,
-    )
-    logger.info(f"Saving prediction video in '{video_order}' order at {video_path}")
+    logger.info(f"Saving prediction video in original order at {video_path}")
     try:
         save_progress_video(
-            video_frames,
-            video_values,
+            frames,
+            display_values,
             video_path,
             label_prefix="pred",
             fps=video_fps,
@@ -183,6 +313,21 @@ def main(config: DictConfig) -> None:
         logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
     else:
         logger.info(f"Wrote prediction video to {video_path}")
+
+    curve_video_path = output_dir / f"{model_name_safe}_{starting_time}_episode_{episode_index}_pred_curve.mp4"
+    logger.info(f"Saving prediction video with progress curve at {curve_video_path}")
+    try:
+        _save_progress_curve_video(
+            frames,
+            predicted_values,
+            curve_video_path,
+            fps=video_fps,
+        )
+    except Exception as exc:
+        logger.exception(f"Failed to save prediction curve video at {curve_video_path}: {exc}")
+        logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
+    else:
+        logger.info(f"Wrote prediction curve video to {curve_video_path}")
 
 
 if __name__ == "__main__":  # pragma: no cover

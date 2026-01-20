@@ -11,7 +11,7 @@ from gvl.utils.constants import MAX_TOKENS_TO_GENERATE
 from gvl.utils.images import to_pil
 
 
-class Gemma8BitClient(BaseModelClient):
+class Gemma4BitClient(BaseModelClient):
     """Client for Gemma 3 image-text model (conditional generation)."""
 
     def __init__(self, model_name: str = "google/gemma-3-4b-it", rpm: float = 0.0, max_input_length: int = 32768):

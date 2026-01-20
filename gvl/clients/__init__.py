@@ -6,6 +6,7 @@ from gvl.clients.cosmos2 import Cosmos2Client
 from gvl.clients.gemini import GeminiClient
 from gvl.clients.gemma_8bit import Gemma8BitClient
 from gvl.clients.gemma import GemmaClient
+from gvl.clients.gguf import GGUFClient
 from gvl.clients.glm import GLMClient
 from gvl.clients.kimi_thinking import KimiThinkingClient
 from gvl.clients.kimi import KimiInstructClient
@@ -22,6 +23,7 @@ __all__ = [
     "GeminiClient",
     "Gemma8BitClient",
     "GemmaClient",
+    "GGUFClient",
     "GLMClient",
     "KimiThinkingClient",
     "KimiInstructClient",

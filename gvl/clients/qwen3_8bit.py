@@ -12,7 +12,7 @@ from gvl.utils.images import to_pil
 from qwen_vl_utils import process_vision_info
 
 
-class Qwen3Client(BaseModelClient):
+class Qwen8BitClient(BaseModelClient):
     def __init__(self, model_name: str = "Qwen/Qwen3-VL-8B-Instruct", rpm: float = 0.0, max_input_length: int = 32768 ):
         super().__init__(rpm=rpm, max_input_length=max_input_length)
         self.model_name = model_name

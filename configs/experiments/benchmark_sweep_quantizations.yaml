@@ -44,27 +44,8 @@ hydra:
     chdir: true
   sweeper:
     params:
-      # Model type runs
-      # model: gemma_8bit, gemma, qwen3_8bit, qwen3, qwen25, mimo, cosmos, cosmos2, gemini3, gemini25, geminirob15, openai52, openai52pro
-
       # Model quantization runs
-      # model: gemma_8bit # 27B
+      model: gemma_8bit # 27B
       # model: gemma_8bit, gemma # 12B
       # model: qwen3, qwen3_8bit # 30B-A3B
       # model: qwen3, qwen3_8bit # 32B
-
-      # Number of in-context examples
-      model: qwen3_8bit, qwen3, openai52, gemini25, gemma_8bit, qwen3_235b_a22b
-      dataset.num_context_episodes: 0,2,4,8
-
-      # Not working
-      # model: qwen3_fp8, qwen3_fp8 # 30B-A3B and 32BS
-      # model: kimi, kimi_thinking, molmo2 (hard to install dependencies)
-      # model: qwen3_gguf, qwen3_gguf, gemma_4bit_gguf (llama-cpp-python need to install with gpu)
-      # model: gemma_4bit, gemma_4bit_qat, qwen3_4bit (cutlass cannot initialize)
-
-      # Single test
-      # model: qwen3_8bit, qwen3_4bit
-
-      # Need handling
-      # model: glm

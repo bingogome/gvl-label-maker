@@ -1,7 +1,7 @@
 defaults:
   - dataset: aloha_static_towel
   - data_loader: huggingface
-  - model: gemma_8bit
+  - model: qwen3_8bit
   - mapper: gemini
   - prompts: default
   - prompt_phrases: default
@@ -14,18 +14,16 @@ sampling_method: random  # Frame sampling method
 anchoring: [first, middle, last]  # Anchor choices: first, middle, last (list preserves order)
 prompt_log_dir: ${prediction.output_dir}/conversation_history  # Set to null to disable conversation logging
 
-dataset:
-  num_context_episodes: 2  # How many in-context episodes to provide
-
 prediction:
-  episode_index: 0  # Which episode to predict
-  num_frames: 15  # Number of frames to sample (ignored if use_full_episode)
-  use_full_episode: false  # Whether to use all frames in the episode
+  episode_index: 0  # Which episode to predict (full episode, no sampling)
+  anchor_episode_index: 0  # Which episode to source anchors from
+  frame_stride: 10  # 0 = every frame, 1 = every other frame (1,3,5,...)
+  context_episode_indices: [1,2,3,4]
   save_raw: true  # Whether to dump raw model outputs
   output_dir: ${hydra:run.dir}  # Run output directory
   temperature: 1  # Sampling temperature for generation
-  video_fps: 2  # FPS for generated videos
-  video_order: shuffled  # shuffled or original
+  video_fps: 50  # FPS for generated videos
+  video_order: original  # Script saves in original order
 
 mapper:
   max_new_tokens: 1024
@@ -35,4 +33,4 @@ mapper:
 
 hydra:
   run:
-    dir: results/
+    dir: results/${now:%Y-%m-%d}/${now:%H-%M-%S}-predict-episode-by-frame
