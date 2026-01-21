@@ -137,6 +137,11 @@ Old:
 
 ## Notebook Tutorial
 
+Refer to 
+
+- `notebooks/benchmark.ipynb` For batch benchmarking episodes.
+- `notebooks/predict_episode_by_frames.ipynb` For predicting frame-by-frame.
+
 ## Script Behaviors
 
 **Per Episode.** The benchmarking script runs on episodes (Behavior of OpenGVL). 
