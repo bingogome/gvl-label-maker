@@ -134,3 +134,15 @@ class GeminiMapper(BaseMapper):
                     time.sleep(4)
                 else:
                     raise PercentagesNormalizationError
+
+    def close(self) -> None:
+        client = getattr(self, "client", None)
+        if client is not None:
+            close_fn = getattr(client, "close", None)
+            if callable(close_fn):
+                try:
+                    close_fn()
+                    logger.debug("Closed Gemini mapper client")
+                except Exception as exc:  # pragma: no cover - best effort
+                    logger.debug(f"Failed to close Gemini mapper client: {exc}")
+        self.client = None

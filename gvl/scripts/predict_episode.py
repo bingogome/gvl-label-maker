@@ -91,7 +91,7 @@ def main(config: DictConfig) -> None:
         logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
     else:
         logger.info(f"Wrote prediction video to {video_path}")
-    cleanup_resources()
+    cleanup_resources(clients=[client, mapper])
 
 
 if __name__ == "__main__":  # pragma: no cover

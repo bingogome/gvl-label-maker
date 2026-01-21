@@ -176,7 +176,7 @@ def main(config: DictConfig) -> None:
         json.dump(summary, f, indent=2)
     logger.info(f"Wrote {len(records)} records to {jsonl_path}")
     logger.info(f"Summary: {summary}")
-    cleanup_resources()
+    cleanup_resources(clients=[client, mapper], records=records)
 
 
 if __name__ == "__main__":  # pragma: no cover

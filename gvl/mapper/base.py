@@ -17,3 +17,7 @@ class BaseMapper(ABC):
             A list of extracted percentage values as floats.
         """
         pass
+
+    def close(self) -> None:
+        """Best-effort cleanup hook for mappers."""
+        return None

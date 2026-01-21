@@ -146,7 +146,7 @@ def main(config: DictConfig) -> None:
         ground_truth=eval_frame.task_completion_rate,
     )
     logger.info(f"Wrote prediction image to {image_path}")
-    cleanup_resources()
+    cleanup_resources(clients=[client, mapper])
 
 
 if __name__ == "__main__":  # pragma: no cover

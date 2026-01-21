@@ -11,6 +11,7 @@ from datetime import datetime
 import os
 from pathlib import Path
 from time import sleep
+from typing import Any
 
 from loguru import logger
 
@@ -427,6 +428,38 @@ class BaseModelClient(ABC):
                 f.write("\n")
         except Exception as exc:
             logger.warning(f"Conversation logging failed: {exc}")
+
+    def _cleanup_handle(self, handle: Any, *, label: str) -> None:
+        if handle is None:
+            return
+        for method_name in ("close", "shutdown", "cleanup", "release"):
+            method = getattr(handle, method_name, None)
+            if callable(method):
+                try:
+                    method()
+                    logger.debug(f"Called {method_name} on {label}")
+                except Exception as exc:  # pragma: no cover - best effort
+                    logger.debug(f"{label}.{method_name} failed: {exc}")
+                break
+
+    def close(self) -> None:
+        """Best-effort cleanup for clients and model resources."""
+        self._cleanup_handle(getattr(self, "client", None), label="client")
+        self._cleanup_handle(getattr(self, "model", None), label="model")
+        self._cleanup_handle(getattr(self, "processor", None), label="processor")
+        for attr in ("client", "model", "processor"):
+            if hasattr(self, attr):
+                try:
+                    setattr(self, attr, None)
+                except Exception as exc:  # pragma: no cover - best effort
+                    logger.debug(f"Failed to clear {attr}: {exc}")
+        self._rate_limiter = None
+
+    def __del__(self) -> None:  # pragma: no cover - best effort during GC
+        try:
+            self.close()
+        except Exception:
+            pass
 
     @abstractmethod
     def _generate_from_events(self, events: list[Event], temperature: float) -> str:  # pragma: no cover - interface only

@@ -267,19 +267,21 @@ def main(config: DictConfig) -> None:
 
     # VOC on predicted frames only
     available_idx = [i for i, v in enumerate(predicted_values) if v is not None]
-    if sum(error_count_total.values()) > 0 or len(available_idx) < 2:
-        metrics_payload = {
-            "voc": 0.0,
-            "voc_note": "errors in prediction prevented metric computation" if sum(error_count_total.values()) > 0 else "insufficient predictions",
-        }
+    if len(available_idx) < 2:
+        metrics_payload = {"voc": 0.0, "voc_note": "insufficient predictions"}
     else:
         preds = [predicted_values[i] for i in available_idx]  # type: ignore[index]
-        truth = available_idx
+        if len(frames) > 1:
+            truth = [round(i / (len(frames) - 1) * 100) for i in available_idx]
+        else:
+            truth = [100 for _ in available_idx]
         voc_value = value_order_correlation(preds, truth)
         if voc_value != voc_value:  # NaN
             metrics_payload = {"voc": 0.0, "voc_note": "undefined correlation"}
         else:
             metrics_payload = {"voc": float(voc_value)}
+            if missing_predictions or sum(error_count_total.values()) > 0:
+                metrics_payload["voc_note"] = "computed on predicted frames only"
 
     episode_record = {
         "index": 0,
@@ -337,7 +339,7 @@ def main(config: DictConfig) -> None:
         logger.error("MP4 saving requires imageio + imageio-ffmpeg (and ffmpeg).")
     else:
         logger.info(f"Wrote prediction curve video to {curve_video_path}")
-    cleanup_resources()
+    cleanup_resources(clients=[client, mapper], records=frame_records)
 
 
 if __name__ == "__main__":  # pragma: no cover
