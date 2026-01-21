@@ -1,0 +1,36 @@
+defaults:
+  - dataset: aloha_static_towel
+  - data_loader: huggingface
+  - model: qwen3
+  - mapper: gemini
+  - prompts: default
+  - prompt_phrases: default
+  - mapping_prompts: default
+  - _self_
+
+seed: 42  # Global seed (propagated to loader & any RNG-dependent logic)
+shuffle: true  # Whether to shuffle frame presentation order
+sampling_method: random  # Frame sampling method
+anchoring: [first, middle, last]  # Anchor choices: first, middle, last (list preserves order)
+prompt_log_dir: ${prediction.output_dir}/conversation_history  # Set to null to disable conversation logging
+
+prediction:
+  episode_index: 0  # Which episode to predict (full episode, no sampling)
+  anchor_episode_index: 0  # Which episode to source anchors from
+  frame_stride: 10  # 0 = every frame, 1 = every other frame (1,3,5,...)
+  context_episode_indices: [2, 3,4]
+  save_raw: true  # Whether to dump raw model outputs
+  output_dir: ${hydra:runtime.output_dir}  # Run output directory
+  temperature: 1  # Sampling temperature for generation
+  video_fps: 50  # FPS for generated videos
+  video_order: original  # Script saves in original order
+
+mapper:
+  max_new_tokens: 1024
+  temperature: 0.75
+  retries: 3
+  mapping_prompt: ${mapping_prompts}
+
+hydra:
+  run:
+    dir: results/${now:%Y-%m-%d}/${now:%H-%M-%S}-predict-episode-by-frame
