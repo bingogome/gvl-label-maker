@@ -21,7 +21,7 @@ prediction:
   episode_index: 0  # Which episode to sample from
   frame_index: 150  # Which frame (within the raw episode) to label
   save_raw: true  # Whether to dump raw model outputs
-  output_dir: ${hydra:run.dir}  # Run output directory
+  output_dir: ${hydra:runtime.output_dir}  # Run output directory
   temperature: 1  # Sampling temperature for generation
 
 mapper:
@@ -32,4 +32,4 @@ mapper:
 
 hydra:
   run:
-    dir: results/
+    dir: results/${now:%Y-%m-%d}/${now:%H-%M-%S}-predict-frame

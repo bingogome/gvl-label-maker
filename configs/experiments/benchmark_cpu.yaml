@@ -23,7 +23,7 @@ prediction:
   save_raw: true  # Whether to dump raw model outputs
   save_images: true  # Save labeled frames per eval case
   save_videos: true  # Save ground-truth + prediction videos
-  output_dir: ${hydra:run.dir}  # Run output directory
+  output_dir: ${hydra:runtime.output_dir}  # Run output directory
   temperature: 1.0  # Sampling temperature for generation
   video_fps: 2  # FPS for generated videos
 
@@ -36,7 +36,7 @@ mapper:
 hydra:
   mode: MULTIRUN # comment this if you don't want to sweep
   run:
-    dir: results/
+    dir: results/${now:%Y-%m-%d}/${now:%H-%M-%S}-benchmark-cpu
   sweep:
     dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}-predict
     subdir: ${hydra.job.num}

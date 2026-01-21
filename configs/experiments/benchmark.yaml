@@ -54,8 +54,8 @@ hydra:
       # model: qwen3, qwen3_8bit # 32B
 
       # Number of in-context examples
-      model: qwen3_8bit, qwen3, openai52, gemini25, gemma_8bit, qwen3_235b_a22b
-      dataset.num_context_episodes: 0,2,4,8
+      # model: qwen3_8bit, qwen3, openai52, gemini25, gemma_8bit, qwen3_235b_a22b
+      # dataset.num_context_episodes: 0,2,4,8
 
       # Not working
       # model: qwen3_fp8, qwen3_fp8 # 30B-A3B and 32BS
@@ -64,7 +64,8 @@ hydra:
       # model: gemma_4bit, gemma_4bit_qat, qwen3_4bit (cutlass cannot initialize)
 
       # Single test
-      # model: qwen3_8bit, qwen3_4bit
+      model: qwen3_235b_a22b
+      dataset.num_context_episodes: 0,2,4,8
 
       # Need handling
       # model: glm

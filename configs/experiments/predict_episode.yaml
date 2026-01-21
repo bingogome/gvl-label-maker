@@ -20,7 +20,7 @@ dataset:
 prediction:
   episode_index: 0  # Which episode to predict
   save_raw: true  # Whether to dump raw model outputs
-  output_dir: ${hydra:run.dir}  # Run output directory
+  output_dir: ${hydra:runtime.output_dir}  # Run output directory
   temperature: 1  # Sampling temperature for generation
   video_fps: 2  # FPS for generated videos
   video_order: original  # shuffled or original
@@ -33,4 +33,4 @@ mapper:
 
 hydra:
   run:
-    dir: results/
+    dir: results/${now:%Y-%m-%d}/${now:%H-%M-%S}-predict-episode
