@@ -125,15 +125,14 @@ New:
 - Quantization
 - Additional recent models
 - Refactored evaluation templates. Independent eval and context. Optional frames and episodes eval. 
-- Result frame-wise visualization
+- Result frame-wise visualization, and optional labeled frames/videos
 
 Old:
 - Data loading from LeRobot datasets and local image sequences, with context episodes, shuffling, and multiple sampling strategies.
-- Supported models: OpenAI, Gemini, Gemma (full/4bit/8bit), Qwen2.5/Qwen3 (full/quantized), GLM, Cosmos, Mimo, Molmo2.
 - Prompt templates and prompt-phrase packs for different instruction styles and framing.
 - Output parsing via regex or Gemini-based mapper with configurable mapping prompts.
 - Metrics: Value-Order Correlation (VOC) for episode predictions and frame error for frame predictions.
-- Outputs: streaming JSONL per prediction, summary JSON, and optional labeled frames/videos.
+- Outputs: streaming JSONL per prediction, summary JSON.
 
 ## Notebook Tutorial
 
