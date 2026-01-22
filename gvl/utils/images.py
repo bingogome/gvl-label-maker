@@ -14,12 +14,21 @@ from gvl.utils.errors import ImageEncodingError
 def normalize_numpy(image: ImageNumpy) -> ImageNumpy:
     """Normalize float arrays in [0,1] to uint8.
 
-    Leaves non-float dtypes unchanged.
+    Leaves uint8 and other non-float dtypes unchanged.
     """
-    if image.dtype in (np.float32, np.float64) and image.max() <= 1.0:
-        image = (image * 255).astype(np.uint8)
-    else:
-        logger.warning(f"Image dtype is {image.dtype} with max {image.max()}. Expected float in [0,1] or uint8. Leaving unchanged.")
+    if image.dtype in (np.float32, np.float64):
+        max_val = float(image.max()) if image.size else 0.0
+        if max_val <= 1.0:
+            image = (image * 255).astype(np.uint8)
+        else:
+            logger.warning(
+                f"Image dtype is {image.dtype} with max {max_val}. Expected float in [0,1]; leaving unchanged."
+            )
+    elif image.dtype != np.uint8:
+        max_val = float(image.max()) if image.size else 0.0
+        logger.warning(
+            f"Image dtype is {image.dtype} with max {max_val}. Expected uint8 or float in [0,1]; leaving unchanged."
+        )
     return image
 
 

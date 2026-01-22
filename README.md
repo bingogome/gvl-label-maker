@@ -9,6 +9,7 @@ Inspired by [OpenGVL](https://github.com/budzianowski/opengvl), based on papers 
 - Gemma3 8-bit: [demos/gemma3_8bit.mp4](demos/gemma3_8bit.mp4)
 - Gemini 2.5: [demos/gemini2_5.mp4](demos/gemini2_5.mp4)
 - GPT-5.2: [demos/gpt5_2.mp4](demos/gpt5_2.mp4)
+- Qwen3 with a phone recorded video: [demos/local.mp4](demos/local.mp4)
 
 <table>
   <tr>
@@ -30,6 +31,7 @@ Inspired by [OpenGVL](https://github.com/budzianowski/opengvl), based on papers 
   <tr>
     <th>gemini-2.5-pro</th>
     <th>gpt-5.2</th>
+    <th>Qwen/Qwen3-VL-32B-Instruct</th>
   </tr>
   <tr>
     <td valign="top" width="33%">
@@ -37,6 +39,9 @@ Inspired by [OpenGVL](https://github.com/budzianowski/opengvl), based on papers 
     </td>
     <td valign="top" width="33%">
       <video src="https://github.com/Astera-org/gvl-predictor/blob/main/demos/gpt5_2.mp4" width="100%" alt="gpt-5.2" controls></video>
+    </td>
+    <td valign="top" width="33%">
+      <video src="https://github.com/Astera-org/gvl-predictor/blob/main/demos/local.mp4" width="100%" alt="local" controls></video>
     </td>
   </tr>
 </table>
@@ -126,6 +131,7 @@ New:
 - Additional recent models
 - Refactored evaluation templates. Independent eval and context. Optional frames and episodes eval. 
 - Result frame-wise visualization, and optional labeled frames/videos
+- Local video loader
 
 Old:
 - Data loading from LeRobot datasets and local image sequences, with context episodes, shuffling, and multiple sampling strategies.
