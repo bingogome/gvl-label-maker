@@ -10,6 +10,7 @@ Inspired by [OpenGVL](https://github.com/budzianowski/opengvl), based on papers 
 - Gemini 2.5: [demos/gemini2_5.mp4](demos/gemini2_5.mp4)
 - GPT-5.2: [demos/gpt5_2.mp4](demos/gpt5_2.mp4)
 - Qwen3 with a phone recorded video: [demos/local.mp4](demos/local.mp4)
+- Qwen3 with a phone recorded navigation video: [demos/nav.mp4](demos/nav.mp4)
 
 <table>
   <tr>
@@ -42,6 +43,14 @@ Inspired by [OpenGVL](https://github.com/budzianowski/opengvl), based on papers 
     </td>
     <td valign="top" width="33%">
       <video src="https://github.com/Astera-org/gvl-predictor/blob/main/demos/local.mp4" width="100%" alt="local" controls></video>
+    </td>
+  </tr>
+  <tr>
+    <th>Qwen/Qwen3-VL-32B-Instruct</th>
+  </tr>
+  <tr>
+    <td valign="top" width="33%">
+      <video src="https://github.com/Astera-org/gvl-predictor/blob/main/demos/nav.mp4" width="100%" alt="nav" controls></video>
     </td>
   </tr>
 </table>
