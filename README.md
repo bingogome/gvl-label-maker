@@ -16,42 +16,48 @@ Inspired by [OpenGVL](https://github.com/budzianowski/opengvl), based on papers 
   <tr>
     <th>Qwen/Qwen3-VL-32B-Instruct (Quantized to 8bit int)</th>
     <th>Qwen/Qwen3-VL-32B-Instruct</th>
-    <th>gemma-3-27b-it(8bit)</th>
+    <th>gemma-3-27b-it (8bit)</th>
   </tr>
   <tr>
     <td valign="top" width="33%">
-      <video src="https://github.com/Astera-org/gvl-predictor/blob/main/demos/qwen3_8bit.mp4" width="100%" alt="Qwen3-VL-32B-Instruct (Quantized to 8bit int)" controls></video>
+      <a href="demos/qwen3_8bit.mp4">▶ Watch Qwen3 8-bit demo</a>
     </td>
     <td valign="top" width="33%">
-      <video src="https://github.com/Astera-org/gvl-predictor/blob/main/demos/qwen3.mp4" width="100%" alt="Qwen/Qwen3-VL-32B-Instruct" controls></video>
+      <a href="demos/qwen3.mp4">▶ Watch Qwen3 demo</a>
     </td>
     <td valign="top" width="33%">
-      <video src="https://github.com/Astera-org/gvl-predictor/blob/main/demos/gemma3_8bit.mp4" width="100%" alt="gemma-3-27b-it(8bit)" controls></video>
+      <a href="demos/gemma3_8bit.mp4">▶ Watch Gemma3 8-bit demo</a>
     </td>
   </tr>
+
   <tr>
     <th>gemini-2.5-pro</th>
     <th>gpt-5.2</th>
-    <th>Qwen/Qwen3-VL-32B-Instruct</th>
+    <th>Qwen/Qwen3-VL-32B-Instruct — Phone Recording</th>
   </tr>
   <tr>
     <td valign="top" width="33%">
-      <video src="https://github.com/Astera-org/gvl-predictor/blob/main/demos/gemini2_5.mp4" width="100%" alt="gemini-2.5-pro" controls></video>
+      <a href="demos/gemini2_5.mp4">▶ Watch Gemini 2.5 Pro demo</a>
     </td>
     <td valign="top" width="33%">
-      <video src="https://github.com/Astera-org/gvl-predictor/blob/main/demos/gpt5_2.mp4" width="100%" alt="gpt-5.2" controls></video>
+      <a href="demos/gpt5_2.mp4">▶ Watch GPT-5.2 demo</a>
     </td>
     <td valign="top" width="33%">
-      <video src="https://github.com/Astera-org/gvl-predictor/blob/main/demos/local.mp4" width="100%" alt="local" controls></video>
+      <a href="demos/local.mp4">▶ Watch phone-recorded demo</a>
     </td>
   </tr>
+
   <tr>
-    <th>Qwen/Qwen3-VL-32B-Instruct</th>
+    <th>Qwen/Qwen3-VL-32B-Instruct — Navigation</th>
+    <th></th>
+    <th></th>
   </tr>
   <tr>
     <td valign="top" width="33%">
-      <video src="https://github.com/Astera-org/gvl-predictor/blob/main/demos/nav.mp4" width="100%" alt="nav" controls></video>
+      <a href="demos/nav.mp4">▶ Watch navigation demo</a>
     </td>
+    <td width="33%"></td>
+    <td width="33%"></td>
   </tr>
 </table>
 
